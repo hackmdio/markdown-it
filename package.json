@@ -1,6 +1,6 @@
 {
-  "name": "markdown-it",
-  "version": "10.0.0",
+  "name": "@hackmd-private/markdown-it",
+  "version": "10.0.0-prerelease-1",
   "description": "Markdown-it - modern pluggable markdown parser.",
   "keywords": [
     "markdown",
