@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 10.0.0-pre3 https://github.com//markdown-it/@hackmd/markdown-it @license MIT */(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.markdownit = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
+/*! @hackmd/markdown-it 10.0.0-pre4 https://github.com//markdown-it/@hackmd/markdown-it @license MIT */(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.markdownit = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 // HTML5 entities map: { name -> utf16string }
 //
 'use strict';
@@ -415,6 +415,10 @@ function getLineOffset(state, tokenIdx) {
   return lineOffset;
 }
 
+function trimLeftOffset(str) {
+  return str.length - str.trimLeft().length;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Re-export libraries commonly used in both markdown-it and its plugins,
@@ -442,6 +446,7 @@ exports.isPunctChar         = isPunctChar;
 exports.escapeRE            = escapeRE;
 exports.normalizeReference  = normalizeReference;
 exports.getLineOffset       = getLineOffset;
+exports.trimLeftOffset      = trimLeftOffset;
 
 },{"./entities":1,"mdurl":58,"uc.micro":65,"uc.micro/categories/P/regex":63}],5:[function(require,module,exports){
 // Just a shortcut for bulk export
@@ -2903,6 +2908,7 @@ module.exports = function fence(state, startLine, endLine, silent) {
 'use strict';
 
 var isSpace = require('../common/utils').isSpace;
+var trimLeftOffset = require('../common/utils').trimLeftOffset;
 
 
 module.exports = function heading(state, startLine, endLine, silent) {
@@ -2947,11 +2953,12 @@ module.exports = function heading(state, startLine, endLine, silent) {
   token.position = originalPos;
   token.size     = pos - originalPos;
 
+  var originalContent = state.src.slice(pos, max);
   token          = state.push('inline', '', 0);
-  token.content  = state.src.slice(pos, max).trim();
+  token.content  = originalContent.trim();
   token.map      = [ startLine, state.line ];
   token.children = [];
-  token.position = pos;
+  token.position = pos + trimLeftOffset(originalContent);
   token.size     = max - pos;
 
   token          = state.push('heading_close', 'h' + String(level), -1);
@@ -4049,6 +4056,7 @@ module.exports = StateBlock;
 'use strict';
 
 var isSpace = require('../common/utils').isSpace;
+var trimLeftOffset = require('../common/utils').trimLeftOffset;
 
 
 function getLine(state, line) {
@@ -4107,10 +4115,6 @@ function escapedSplit(str) {
   result.push(str.substring(lastPos));
 
   return result;
-}
-
-function trimLeftOffset(str) {
-  return str.length - str.trimLeft().length;
 }
 
 module.exports = function table(state, startLine, endLine, silent) {
