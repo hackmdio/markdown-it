@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 10.0.0-pre7 https://github.com//markdown-it/@hackmd/markdown-it @license MIT */(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.markdownit = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
+/*! @hackmd/markdown-it 10.0.0-pre8 https://github.com//markdown-it/@hackmd/markdown-it @license MIT */(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.markdownit = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 // HTML5 entities map: { name -> utf16string }
 //
 'use strict';
@@ -4325,12 +4325,14 @@ module.exports = function block(state) {
 },{}],31:[function(require,module,exports){
 'use strict';
 
-module.exports = function inline(state) {
+module.exports = function inline(state, positionOffset) {
   var tokens = state.tokens, tok, i, l;
 
   // Parse inlines
   for (i = 0, l = tokens.length; i < l; i++) {
     tok = tokens[i];
+    tok.position += positionOffset || 0;
+
     if (tok.type === 'inline') {
       state.md.inline.parse(tok.content, state.md, Object.assign({}, state.env, { parentToken: tok }), tok.children);
 
@@ -4408,6 +4410,7 @@ module.exports = function linkify(state) {
 
         text = currentToken.content;
         links = state.md.linkify.match(text);
+        var offset = currentToken.position || 0;
 
         // Now split string to nodes
         nodes = [];
@@ -4440,6 +4443,8 @@ module.exports = function linkify(state) {
             token         = new state.Token('text', '', 0);
             token.content = text.slice(lastPos, pos);
             token.level   = level;
+            token.position = lastPos + offset;
+            token.size = token.content.length;
             nodes.push(token);
           }
 
@@ -4453,6 +4458,8 @@ module.exports = function linkify(state) {
           token         = new state.Token('text', '', 0);
           token.content = urlText;
           token.level   = level;
+          token.position = pos + offset;
+          token.size = token.content.length;
           nodes.push(token);
 
           token         = new state.Token('link_close', 'a', -1);
@@ -4467,6 +4474,8 @@ module.exports = function linkify(state) {
           token         = new state.Token('text', '', 0);
           token.content = text.slice(lastPos);
           token.level   = level;
+          token.position = lastPos + offset;
+          token.size = token.content.length;
           nodes.push(token);
         }
 
@@ -4864,6 +4873,8 @@ module.exports = function autolink(state, silent) {
 
       token         = state.push('text', '', 0);
       token.content = state.md.normalizeLinkText(url);
+      token.position = pos;
+      token.size = token.content.length;
 
       token         = state.push('link_close', 'a', -1);
       token.markup  = 'autolink';
@@ -4889,6 +4900,8 @@ module.exports = function autolink(state, silent) {
 
       token         = state.push('text', '', 0);
       token.content = state.md.normalizeLinkText(url);
+      token.position = pos;
+      token.size = token.content.length;
 
       token         = state.push('link_close', 'a', -1);
       token.markup  = 'autolink';
@@ -5664,7 +5677,7 @@ module.exports = function link(state, silent) {
       attrs.push([ 'title', title ]);
     }
 
-    state.md.inline.tokenize(state);
+    state.md.inline.tokenize(state, labelStart);
 
     token        = state.push('link_close', 'a', -1);
   }
