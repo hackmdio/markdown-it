@@ -43,7 +43,7 @@ describe('Annotation', function () {
     // First heading
     assert.strictEqual(tokens[0].position, 0);
     assert.strictEqual(tokens[0].size, 1);
-    assert.strictEqual(tokens[1].position, 1);
+    assert.strictEqual(tokens[1].position, 2);
     assert.strictEqual(tokens[1].size, 6);
     assert.strictEqual(tokens[2].position, 7);
     assert.strictEqual(tokens[2].size, 0);
@@ -51,7 +51,7 @@ describe('Annotation', function () {
     // Second heading
     assert.strictEqual(tokens[3].position, 9);
     assert.strictEqual(tokens[3].size, 2);
-    assert.strictEqual(tokens[4].position, 11);
+    assert.strictEqual(tokens[4].position, 12);
     assert.strictEqual(tokens[4].size, 7);
     assert.strictEqual(tokens[5].position, 18);
     assert.strictEqual(tokens[5].size, 2);
@@ -109,10 +109,10 @@ describe('Annotation', function () {
 
     // head -> columns
     assertTokenContent(src, tokens[6], '|');
-    assertTokenContent(src, tokens[7], ' Type ');
+    assertTokenContent(src, tokens[7], 'Type');
     assertTokenContent(src, tokens[8], '');
     assertTokenContent(src, tokens[9], '|');
-    assertTokenContent(src, tokens[10], ' Message ');
+    assertTokenContent(src, tokens[10], 'Message');
     assertTokenContent(src, tokens[11], '|');
 
     // head -> TR (close)
@@ -128,17 +128,17 @@ describe('Annotation', function () {
 
     // body -> rows
     assertTokenContent(src, tokens[16], '|');
-    assertTokenContent(src, tokens[17], ' Hello ');
+    assertTokenContent(src, tokens[17], 'Hello');
     assertTokenContent(src, tokens[18], '');
     assertTokenContent(src, tokens[19], '|');
-    assertTokenContent(src, tokens[20], ' World');
+    assertTokenContent(src, tokens[20], 'World');
     assertTokenContent(src, tokens[21], '\n');
 
     assertTokenContent(src, tokens[24], '|');
-    assertTokenContent(src, tokens[25], ' Bonjour ');
+    assertTokenContent(src, tokens[25], 'Bonjour');
     assertTokenContent(src, tokens[26], '');
     assertTokenContent(src, tokens[27], '|');
-    assertTokenContent(src, tokens[28], ' Monde ');
+    assertTokenContent(src, tokens[28], 'Monde');
     assertTokenContent(src, tokens[29], '|');
   });
 
