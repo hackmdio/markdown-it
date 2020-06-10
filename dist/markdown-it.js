@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 10.0.0-pre9 https://github.com//markdown-it/@hackmd/markdown-it @license MIT */(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.markdownit = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
+/*! @hackmd/markdown-it 10.0.0-pre10 https://github.com//markdown-it/@hackmd/markdown-it @license MIT */(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.markdownit = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 // HTML5 entities map: { name -> utf16string }
 //
 'use strict';
@@ -410,8 +410,7 @@ function getLineOffset(state, tokenIdx) {
   var linesBefore = tokensBefore.filter(function (t) { return t.type.includes('break'); }).length;
   for (var i = 0; i < linesBefore; i++) {
     var startLine = i + parentToken.map[0] + 1;
-    var beg = blockState.bMarks[startLine];
-    lineOffset += beg - blockState.src.slice(0, beg).lastIndexOf('\n') - 1;
+    lineOffset += blockState.tShift[startLine];
   }
   return lineOffset;
 }
@@ -2490,7 +2489,7 @@ module.exports = function blockquote(state, startLine, endLine, silent) {
       offset,
       oldBMarks,
       oldBSCount,
-      // oldIndent,
+      oldIndent,
       oldParentType,
       oldSCount,
       oldTShift,
@@ -2728,7 +2727,7 @@ module.exports = function blockquote(state, startLine, endLine, silent) {
     state.sCount[nextLine] = -1;
   }
 
-  // oldIndent = state.blkIndent;
+  oldIndent = state.blkIndent;
   state.blkIndent = 0;
 
   token        = state.push('blockquote_open', 'blockquote', 1);
@@ -2744,7 +2743,6 @@ module.exports = function blockquote(state, startLine, endLine, silent) {
   state.parentType = oldParentType;
   lines[1] = state.line;
 
-  /*
   // Restore original tShift; this might not be necessary since the parser
   // has already been here, but just to make sure we can do that.
   for (i = 0; i < oldTShift.length; i++) {
@@ -2754,7 +2752,6 @@ module.exports = function blockquote(state, startLine, endLine, silent) {
     state.bsCount[i + startLine] = oldBSCount[i];
   }
   state.blkIndent = oldIndent;
-  */
 
   return true;
 };
@@ -3601,12 +3598,12 @@ module.exports = function paragraph(state, startLine/*, endLine*/) {
   token.content  = content;
   token.map      = [ startLine, state.line ];
   token.children = [];
-  token.position = pos + state.sCount[startLine];
+  token.position = pos + state.tShift[startLine];
   token.size     = content.length;
 
   token          = state.push('paragraph_close', 'p', -1);
   token.size     = 0;
-  token.position = content.length + pos + state.sCount[startLine];
+  token.position = content.length + pos + state.tShift[startLine];
 
   state.parentType = oldParentType;
 
@@ -6152,6 +6149,13 @@ module.exports = function text_collapse(state) {
 
       // collapse two adjacent text nodes
       tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
+
+      // only move foward position when it has content
+      if (tokens[curr].content) {
+        tokens[curr + 1].position = tokens[curr].position;
+      }
+      // add up size
+      tokens[curr + 1].size = tokens[curr].size + tokens[curr + 1].size;
     } else {
       if (curr !== last) { tokens[last] = tokens[curr]; }
 
