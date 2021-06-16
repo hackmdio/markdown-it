@@ -2,11 +2,10 @@
 
 ## Install
 
-**node.js** & **bower**:
+**node.js**
 
 ```bash
 npm install markdown-it --save
-bower install markdown-it --save
 ```
 
 **browser (CDN):**
@@ -118,7 +117,7 @@ var md = require('markdown-it')({
   highlight: function (str, lang) {
     if (lang && hljs.getLanguage(lang)) {
       try {
-        return hljs.highlight(lang, str).value;
+        return hljs.highlight(str, { language: lang }).value;
       } catch (__) {}
     }
 
@@ -138,7 +137,7 @@ var md = require('markdown-it')({
     if (lang && hljs.getLanguage(lang)) {
       try {
         return '<pre class="hljs"><code>' +
-               hljs.highlight(lang, str, true).value +
+               hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
                '</code></pre>';
       } catch (__) {}
     }

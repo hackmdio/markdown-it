@@ -6,7 +6,7 @@
 var mdurl = require('mdurl');
 
 
-var hljs = require('highlight.js/lib/highlight.js');
+var hljs = require('highlight.js/lib/core');
 
 hljs.registerLanguage('actionscript', require('highlight.js/lib/languages/actionscript'));
 hljs.registerLanguage('apache',       require('highlight.js/lib/languages/apache'));
@@ -18,6 +18,8 @@ hljs.registerLanguage('bash',         require('highlight.js/lib/languages/bash')
 hljs.registerLanguage('clojure',      require('highlight.js/lib/languages/clojure'));
 hljs.registerLanguage('cmake',        require('highlight.js/lib/languages/cmake'));
 hljs.registerLanguage('coffeescript', require('highlight.js/lib/languages/coffeescript'));
+hljs.registerLanguage('c-like',       require('highlight.js/lib/languages/c-like'));
+hljs.registerLanguage('c',            require('highlight.js/lib/languages/c'));
 hljs.registerLanguage('cpp',          require('highlight.js/lib/languages/cpp'));
 hljs.registerLanguage('arduino',      require('highlight.js/lib/languages/arduino'));
 hljs.registerLanguage('css',          require('highlight.js/lib/languages/css'));
@@ -35,6 +37,7 @@ hljs.registerLanguage('ini',          require('highlight.js/lib/languages/ini'))
 hljs.registerLanguage('java',         require('highlight.js/lib/languages/java'));
 hljs.registerLanguage('javascript',   require('highlight.js/lib/languages/javascript'));
 hljs.registerLanguage('json',         require('highlight.js/lib/languages/json'));
+hljs.registerLanguage('latex',         require('highlight.js/lib/languages/latex'));
 hljs.registerLanguage('less',         require('highlight.js/lib/languages/less'));
 hljs.registerLanguage('lisp',         require('highlight.js/lib/languages/lisp'));
 hljs.registerLanguage('livescript',   require('highlight.js/lib/languages/livescript'));
@@ -55,7 +58,6 @@ hljs.registerLanguage('smalltalk',    require('highlight.js/lib/languages/smallt
 hljs.registerLanguage('stylus',       require('highlight.js/lib/languages/stylus'));
 hljs.registerLanguage('swift',        require('highlight.js/lib/languages/swift'));
 hljs.registerLanguage('tcl',          require('highlight.js/lib/languages/tcl'));
-hljs.registerLanguage('tex',          require('highlight.js/lib/languages/tex'));
 hljs.registerLanguage('typescript',   require('highlight.js/lib/languages/typescript'));
 hljs.registerLanguage('verilog',      require('highlight.js/lib/languages/verilog'));
 hljs.registerLanguage('vhdl',         require('highlight.js/lib/languages/vhdl'));
@@ -89,7 +91,7 @@ defaults.highlight = function (str, lang) {
     if (lang && lang !== 'auto' && hljs.getLanguage(lang)) {
 
       return '<pre class="hljs language-' + esc(lang.toLowerCase()) + '"><code>' +
-             hljs.highlight(lang, str, true).value +
+             hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
              '</code></pre>';
 
     } else if (lang === 'auto') {
@@ -181,7 +183,7 @@ function mdInit() {
 
 function setHighlightedlContent(selector, content, lang) {
   if (window.hljs) {
-    $(selector).html(window.hljs.highlight(lang, content).value);
+    $(selector).html(window.hljs.highlight(content, { language: lang }).value);
   } else {
     $(selector).text(content);
   }
