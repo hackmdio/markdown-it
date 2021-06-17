@@ -1,9 +1,10 @@
-/*! @hackmd/markdown-it 12.0.6-pre1 https://github.com/markdown-it/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.7 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
 })(this, (function() {
   "use strict";
+  var commonjsGlobal = typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : {};
   function createCommonjsModule(fn, basedir, module) {
     return module = {
       path: basedir,
@@ -2892,18 +2893,32 @@
       
             return str.toLowerCase().toUpperCase();
     }
-    function getLineOffset(state, tokenIdx) {
+    /* eslint-env browser */    var _g = typeof commonjsGlobal !== "undefined" ? commonjsGlobal : window;
+    var tokensRef = new _g.WeakMap;
+    // TODO: performance tweaks for emphasis **_* pattern which has only 1/10 performance after adding line offset
+        function getLineOffset(state, tokenIdx) {
       var blockState = state.env.state_block;
       var parentToken = state.env.parentToken;
       var tokensBefore = typeof tokenIdx !== "undefined" ? state.tokens.slice(0, tokenIdx) : state.tokens;
-      var lineOffset = 0;
+      var resultsMap = tokensRef.get(state.tokens);
+      if (resultsMap) {
+        var cachedResult = resultsMap.get(tokenIdx);
+        if (typeof cachedResult !== "undefined") {
+          return cachedResult;
+        }
+      } else {
+        resultsMap = new _g.Map;
+        tokensRef.set(state.tokens, resultsMap);
+      }
       var linesBefore = tokensBefore.filter((function(t) {
-        return t.type.includes("break");
+        return t.type === "softbreak" || t.type === "hardbreak";
       })).length;
+      var lineOffset = 0;
       for (var i = 0; i < linesBefore; i++) {
         var startLine = i + parentToken.map[0] + 1;
         lineOffset += blockState.tShift[startLine];
       }
+      resultsMap.set(tokenIdx, lineOffset);
       return lineOffset;
     }
     function trimLeftOffset(str) {
