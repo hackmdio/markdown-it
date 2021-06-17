@@ -120,7 +120,7 @@ describe('Pathological sequences speed', () => {
 
   describe('Markdown-it', () => {
     it('emphasis **_* pattern', async () => {
-      await test_pattern('**_* '.repeat(50000));
+      await test_pattern('**_* '.repeat(5000));
     });
 
     it('backtick ``\\``\\`` pattern', async () => {

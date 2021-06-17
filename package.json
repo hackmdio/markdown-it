@@ -1,6 +1,6 @@
 {
-  "name": "markdown-it",
-  "version": "12.0.6",
+  "name": "@hackmd/markdown-it",
+  "version": "12.0.6-pre1",
   "description": "Markdown-it - modern pluggable markdown parser.",
   "keywords": [
     "markdown",
@@ -9,7 +9,7 @@
     "markdown-it",
     "markdown-it-plugin"
   ],
-  "repository": "markdown-it/markdown-it",
+  "repository": "hackmdio/markdown-it",
   "license": "MIT",
   "main": "index.js",
   "bin": {
@@ -28,7 +28,7 @@
     "benchmark-deps": "npm install --prefix benchmark/extra/ -g marked@0.3.6 commonmark@0.26.0 markdown-it/markdown-it.git#2.2.1",
     "specsplit": "support/specsplit.js good -o test/fixtures/commonmark/good.txt && support/specsplit.js bad -o test/fixtures/commonmark/bad.txt && support/specsplit.js",
     "todo": "grep 'TODO' -n -r ./lib 2>/dev/null",
-    "prepublishOnly": "npm run gh-demo && npm run gh-doc"
+    "prepublishOnly": ""
   },
   "files": [
     "index.js",

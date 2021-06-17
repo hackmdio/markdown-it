@@ -1,4 +1,4 @@
-/*! markdown-it 12.0.6 https://github.com/markdown-it/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.6-pre1 https://github.com/markdown-it/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -2892,6 +2892,23 @@
       
             return str.toLowerCase().toUpperCase();
     }
+    function getLineOffset(state, tokenIdx) {
+      var blockState = state.env.state_block;
+      var parentToken = state.env.parentToken;
+      var tokensBefore = typeof tokenIdx !== "undefined" ? state.tokens.slice(0, tokenIdx) : state.tokens;
+      var lineOffset = 0;
+      var linesBefore = tokensBefore.filter((function(t) {
+        return t.type.includes("break");
+      })).length;
+      for (var i = 0; i < linesBefore; i++) {
+        var startLine = i + parentToken.map[0] + 1;
+        lineOffset += blockState.tShift[startLine];
+      }
+      return lineOffset;
+    }
+    function trimLeftOffset(str) {
+      return str.length - str.trimLeft().length;
+    }
     ////////////////////////////////////////////////////////////////////////////////
     // Re-export libraries commonly used in both markdown-it and its plugins,
     // so plugins won't have to depend on them explicitly, which reduces their
@@ -2916,6 +2933,8 @@
     exports.isPunctChar = isPunctChar;
     exports.escapeRE = escapeRE;
     exports.normalizeReference = normalizeReference;
+    exports.getLineOffset = getLineOffset;
+    exports.trimLeftOffset = trimLeftOffset;
   }));
   // Parse link label
     var parse_link_label = function parseLinkLabel(state, start, disableNested) {
@@ -3651,13 +3670,22 @@
       state.md.block.parse(state.src, state.md, state.env, state.tokens);
     }
   };
-  var inline = function inline(state) {
+  var inline = function inline(state, positionOffset) {
     var tokens = state.tokens, tok, i, l;
     // Parse inlines
         for (i = 0, l = tokens.length; i < l; i++) {
       tok = tokens[i];
+      tok.position += positionOffset || 0;
       if (tok.type === "inline") {
-        state.md.inline.parse(tok.content, state.md, state.env, tok.children);
+        state.md.inline.parse(tok.content, state.md, Object.assign({}, state.env, {
+          parentToken: tok,
+          parentState: state,
+          parentTokenIndex: i
+        }), tok.children);
+        // Update position of all children to be absolute
+                for (var child = 0; child < tok.children.length; child++) {
+          tok.children[child].position += tok.position;
+        }
       }
     }
   };
@@ -3706,6 +3734,7 @@
         if (currentToken.type === "text" && state.md.linkify.test(currentToken.content)) {
           text = currentToken.content;
           links = state.md.linkify.match(text);
+          var offset = currentToken.position || 0;
           // Now split string to nodes
                     nodes = [];
           level = currentToken.level;
@@ -3733,6 +3762,8 @@
               token = new state.Token("text", "", 0);
               token.content = text.slice(lastPos, pos);
               token.level = level;
+              token.position = lastPos + offset;
+              token.size = token.content.length;
               nodes.push(token);
             }
             token = new state.Token("link_open", "a", 1);
@@ -3744,6 +3775,8 @@
             token = new state.Token("text", "", 0);
             token.content = urlText;
             token.level = level;
+            token.position = pos + offset;
+            token.size = token.content.length;
             nodes.push(token);
             token = new state.Token("link_close", "a", -1);
             token.level = --level;
@@ -3756,6 +3789,8 @@
             token = new state.Token("text", "", 0);
             token.content = text.slice(lastPos);
             token.level = level;
+            token.position = lastPos + offset;
+            token.size = token.content.length;
             nodes.push(token);
           }
           // replace current node
@@ -4082,6 +4117,16 @@
 	   * If it's true, ignore this element when rendering. Used for tight lists
 	   * to hide paragraphs.
 	   **/    this.hidden = false;
+    /**
+	   * Token#position -> Number
+	   *
+	   * Position in the original string
+	   **/    this.position = 0;
+    /**
+	   * Token#size -> Number
+	   *
+	   * Size of the token
+	   **/    this.size = 0;
   }
   /**
 	 * Token.attrIndex(name) -> Number
@@ -4187,6 +4232,7 @@
   Core.prototype.State = state_core;
   var parser_core = Core;
   var isSpace$a = utils.isSpace;
+  var trimLeftOffset$1 = utils.trimLeftOffset;
   function getLine(state, line) {
     var pos = state.bMarks[line] + state.tShift[line], max = state.eMarks[line];
     return state.src.substr(pos, max - pos);
@@ -4215,7 +4261,7 @@
     return result;
   }
   var table = function table(state, startLine, endLine, silent) {
-    var ch, lineText, pos, i, l, nextLine, columns, columnCount, token, aligns, t, tableLines, tbodyLines, oldParentType, terminate, terminatorRules, firstCh, secondCh;
+    var ch, lineText, pos, i, l, nextLine, columns, columnCount, token, aligns, t, tableLines, tbodyLines, oldParentType, terminate, terminatorRules, firstCh, secondCh, columnVIndex;
     // should have at least two lines
         if (startLine + 2 > endLine) {
       return false;
@@ -4309,22 +4355,46 @@
         terminatorRules = state.md.block.ruler.getRules("blockquote");
     token = state.push("table_open", "table", 1);
     token.map = tableLines = [ startLine, 0 ];
+    token.size = 0;
+    token.position = state.bMarks[startLine];
     token = state.push("thead_open", "thead", 1);
     token.map = [ startLine, startLine + 1 ];
+    token.size = 0;
+    token.position = state.bMarks[startLine];
     token = state.push("tr_open", "tr", 1);
     token.map = [ startLine, startLine + 1 ];
+    token.size = 0;
+    token.position = state.bMarks[startLine];
+    columnVIndex = state.bMarks[startLine] + state.tShift[startLine];
     for (i = 0; i < columns.length; i++) {
       token = state.push("th_open", "th", 1);
+      token.map = [ startLine, startLine + 1 ];
+      token.size = 1;
+      token.position = columnVIndex;
+      columnVIndex += 1;
       if (aligns[i]) {
         token.attrs = [ [ "style", "text-align:" + aligns[i] ] ];
       }
       token = state.push("inline", "", 0);
       token.content = columns[i].trim();
       token.children = [];
+      token.position = columnVIndex + trimLeftOffset$1(columns[i]);
+      token.size = token.content.length;
+      columnVIndex += columns[i].length;
       token = state.push("th_close", "th", -1);
+      token.position = columnVIndex;
+      // Last column?
+            if (i === columns.length - 1) {
+        token.size = 1;
+        columnVIndex += 1;
+      }
     }
     token = state.push("tr_close", "tr", -1);
+    token.size = 0;
+    token.position = state.eMarks[startLine];
     token = state.push("thead_close", "thead", -1);
+    token.size = state.eMarks[startLine + 1] - state.bMarks[startLine + 1];
+    token.position = state.bMarks[startLine + 1];
     for (nextLine = startLine + 2; nextLine < endLine; nextLine++) {
       if (state.sCount[nextLine] < state.blkIndent) {
         break;
@@ -4352,26 +4422,50 @@
       if (nextLine === startLine + 2) {
         token = state.push("tbody_open", "tbody", 1);
         token.map = tbodyLines = [ startLine + 2, 0 ];
+        token.size = 0;
+        token.position = state.bMarks[startLine + 2];
       }
       token = state.push("tr_open", "tr", 1);
       token.map = [ nextLine, nextLine + 1 ];
+      token.size = 0;
+      token.position = state.bMarks[nextLine];
+      columnVIndex = state.bMarks[nextLine] + state.tShift[nextLine];
       for (i = 0; i < columnCount; i++) {
         token = state.push("td_open", "td", 1);
+        token.size = 1;
+        token.position = columnVIndex;
+        columnVIndex++;
         if (aligns[i]) {
           token.attrs = [ [ "style", "text-align:" + aligns[i] ] ];
         }
+        var originalContent = columns[i] || "";
         token = state.push("inline", "", 0);
         token.content = columns[i] ? columns[i].trim() : "";
         token.children = [];
+        token.size = token.content.length;
+        token.position = columnVIndex + trimLeftOffset$1(originalContent);
+        columnVIndex += originalContent.length;
+        token.map = [ nextLine, nextLine + 1 ];
         token = state.push("td_close", "td", -1);
+        token.position = columnVIndex;
+        // Last column?
+                if (i === columns.length - 1) {
+          token.size = 1;
+        }
       }
       token = state.push("tr_close", "tr", -1);
+      token.size = 0;
+      token.position = state.eMarks[nextLine];
     }
     if (tbodyLines) {
       token = state.push("tbody_close", "tbody", -1);
+      token.size = 0;
+      token.position = state.eMarks[nextLine];
       tbodyLines[1] = nextLine;
     }
     token = state.push("table_close", "table", -1);
+    token.size = 0;
+    token.position = state.eMarks[nextLine];
     tableLines[1] = nextLine;
     state.parentType = oldParentType;
     state.line = nextLine;
@@ -4379,7 +4473,7 @@
   };
   // Code block (4 spaces padded)
     var code = function code(state, startLine, endLine /*, silent*/) {
-    var nextLine, last, token;
+    var nextLine, last, token, pos = state.bMarks[startLine], endPos;
     if (state.sCount[startLine] - state.blkIndent < 4) {
       return false;
     }
@@ -4396,15 +4490,18 @@
       }
       break;
     }
+    endPos = state.bMarks[last] + state.tShift[last];
     state.line = last;
     token = state.push("code_block", "code", 0);
     token.content = state.getLines(startLine, last, 4 + state.blkIndent, true);
     token.map = [ startLine, state.line ];
+    token.position = pos;
+    token.size = endPos - pos;
     return true;
   };
   // fences (``` lang, ~~~ lang)
     var fence = function fence(state, startLine, endLine, silent) {
-    var marker, len, params, nextLine, mem, token, markup, haveEndMarker = false, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine];
+    var marker, len, params, nextLine, mem, token, markup, originalPos, haveEndMarker = false, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine];
     // if it's indented more than 3 spaces, it should be a code block
         if (state.sCount[startLine] - state.blkIndent >= 4) {
       return false;
@@ -4423,6 +4520,7 @@
     if (len < 3) {
       return false;
     }
+    originalPos = mem;
     markup = state.src.slice(mem, pos);
     params = state.src.slice(pos, max);
     if (marker === 96 /* ` */) {
@@ -4480,6 +4578,8 @@
     token.content = state.getLines(startLine + 1, nextLine, len, true);
     token.markup = markup;
     token.map = [ startLine, state.line ];
+    token.position = originalPos;
+    token.size = pos - originalPos;
     return true;
   };
   var isSpace$9 = utils.isSpace;
@@ -4702,11 +4802,12 @@
   };
   var isSpace$8 = utils.isSpace;
   var hr = function hr(state, startLine, endLine, silent) {
-    var marker, cnt, ch, token, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine];
+    var marker, cnt, ch, token, originalPos, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine];
     // if it's indented more than 3 spaces, it should be a code block
         if (state.sCount[startLine] - state.blkIndent >= 4) {
       return false;
     }
+    originalPos = pos;
     marker = state.src.charCodeAt(pos++);
     // Check hr marker
         if (marker !== 42 /* * */ && marker !== 45 /* - */ && marker !== 95 /* _ */) {
@@ -4733,6 +4834,8 @@
     token = state.push("hr", "hr", 0);
     token.map = [ startLine, state.line ];
     token.markup = Array(cnt + 1).join(String.fromCharCode(marker));
+    token.position = originalPos;
+    token.size = pos - originalPos;
     return true;
   };
   var isSpace$7 = utils.isSpace;
@@ -4868,6 +4971,8 @@
     }
     token.map = listLines = [ startLine, 0 ];
     token.markup = String.fromCharCode(markerCharCode);
+    token.position = start;
+    token.size = 0;
     
     // Iterate list items
     
@@ -4910,6 +5015,7 @@
             token = state.push("list_item_open", "li", 1);
       token.markup = String.fromCharCode(markerCharCode);
       token.map = itemLines = [ startLine, 0 ];
+      token.position = contentStart;
       // change current state, then restore it after parser subcall
             oldTight = state.tight;
       oldTShift = state.tShift[startLine];
@@ -5257,13 +5363,16 @@
     return true;
   };
   var isSpace$5 = utils.isSpace;
+  var trimLeftOffset = utils.trimLeftOffset;
   var heading = function heading(state, startLine, endLine, silent) {
-    var ch, level, tmp, token, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine];
+    var ch, level, tmp, token, originalPos, originalMax, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine];
     // if it's indented more than 3 spaces, it should be a code block
         if (state.sCount[startLine] - state.blkIndent >= 4) {
       return false;
     }
     ch = state.src.charCodeAt(pos);
+    originalPos = pos;
+    originalMax = max;
     if (ch !== 35 /* # */ || pos >= max) {
       return false;
     }
@@ -5291,12 +5400,19 @@
     token = state.push("heading_open", "h" + String(level), 1);
     token.markup = "########".slice(0, level);
     token.map = [ startLine, state.line ];
+    token.position = originalPos;
+    token.size = pos - originalPos;
+    var originalContent = state.src.slice(pos, max);
     token = state.push("inline", "", 0);
-    token.content = state.src.slice(pos, max).trim();
+    token.content = originalContent.trim();
     token.map = [ startLine, state.line ];
     token.children = [];
+    token.position = pos + trimLeftOffset(originalContent);
+    token.size = max - pos;
     token = state.push("heading_close", "h" + String(level), -1);
     token.markup = "########".slice(0, level);
+    token.position = max;
+    token.size = originalMax - max;
     return true;
   };
   // lheading (---, ===)
@@ -5359,18 +5475,24 @@
     token = state.push("heading_open", "h" + String(level), 1);
     token.markup = String.fromCharCode(marker);
     token.map = [ startLine, state.line ];
+    token.position = state.bMarks[startLine];
+    token.size = 0;
     token = state.push("inline", "", 0);
     token.content = content;
     token.map = [ startLine, state.line - 1 ];
     token.children = [];
+    token.position = state.bMarks[startLine];
+    token.size = content.length;
     token = state.push("heading_close", "h" + String(level), -1);
     token.markup = String.fromCharCode(marker);
+    token.position = state.bMarks[state.line - 1];
+    token.size = state.bMarks[state.line] - state.bMarks[state.line - 1];
     state.parentType = oldParentType;
     return true;
   };
   // Paragraph
     var paragraph = function paragraph(state, startLine /*, endLine*/) {
-    var content, terminate, i, l, token, oldParentType, nextLine = startLine + 1, terminatorRules = state.md.block.ruler.getRules("paragraph"), endLine = state.lineMax;
+    var content, terminate, i, l, token, oldParentType, nextLine = startLine + 1, terminatorRules = state.md.block.ruler.getRules("paragraph"), endLine = state.lineMax, pos = state.bMarks[startLine];
     oldParentType = state.parentType;
     state.parentType = "paragraph";
     // jump line-by-line until empty one or EOF
@@ -5400,11 +5522,17 @@
     state.line = nextLine;
     token = state.push("paragraph_open", "p", 1);
     token.map = [ startLine, state.line ];
+    token.position = pos;
+    token.size = 0;
     token = state.push("inline", "", 0);
     token.content = content;
     token.map = [ startLine, state.line ];
     token.children = [];
+    token.position = pos + state.tShift[startLine];
+    token.size = content.length;
     token = state.push("paragraph_close", "p", -1);
+    token.size = 0;
+    token.position = content.length + pos + state.tShift[startLine];
     state.parentType = oldParentType;
     return true;
   };
@@ -5415,6 +5543,13 @@
     // link to parser instance
         this.md = md;
     this.env = env;
+    if (env) {
+      env.state_block = this;
+    } else {
+      this.env = {
+        state_block: this
+      };
+    }
     
     // Internal state vartiables
     
@@ -5859,6 +5994,8 @@
           token = state.push("code_inline", "code", 0);
           token.markup = marker;
           token.content = state.src.slice(pos, matchStart).replace(/\n/g, " ").replace(/^ (.+) $/, "$1");
+          token.position = pos;
+          token.size = token.content.length;
         }
         state.pos = matchEnd;
         return true;
@@ -5872,7 +6009,7 @@
     state.pos += openerLength;
     return true;
   };
-  // ~~strike through~~
+  var getLineOffset$2 = utils.getLineOffset;
   // Insert each marker as a separate text token, and add it to delimiter list
   
     var tokenize$1 = function strikethrough(state, silent) {
@@ -5899,6 +6036,7 @@
       token.content = ch + ch;
       state.delimiters.push({
         marker: marker,
+        position: start,
         length: 0,
         // disable "rule of 3" length checks meant for emphasis
         jump: i / 2,
@@ -5929,6 +6067,7 @@
       token.nesting = 1;
       token.markup = "~~";
       token.content = "";
+      token.position = startDelim.position + getLineOffset$2(state, startDelim.token);
       token = state.tokens[endDelim.token];
       token.type = "s_close";
       token.tag = "s";
@@ -5974,7 +6113,7 @@
     tokenize: tokenize$1,
     postProcess: postProcess_1$1
   };
-  // Process *this* and _that_
+  var getLineOffset$1 = utils.getLineOffset;
   // Insert each marker as a separate text token, and add it to delimiter list
   
     var tokenize = function emphasis(state, silent) {
@@ -5990,6 +6129,7 @@
       token = state.push("text", "", 0);
       token.content = String.fromCharCode(marker);
       state.delimiters.push({
+        position: state.pos,
         // Char code of the starting marker (number).
         marker: marker,
         // Total length of these series of delimiters.
@@ -6039,6 +6179,7 @@
       token.nesting = 1;
       token.markup = isStrong ? ch + ch : ch;
       token.content = "";
+      token.position = startDelim.position + getLineOffset$1(state, startDelim.token);
       token = state.tokens[endDelim.token];
       token.type = isStrong ? "strong_close" : "em_close";
       token.tag = isStrong ? "strong" : "em";
@@ -6180,7 +6321,7 @@
       if (title) {
         attrs.push([ "title", title ]);
       }
-      state.md.inline.tokenize(state);
+      state.md.inline.tokenize(state, labelStart);
       token = state.push("link_close", "a", -1);
     }
     state.pos = pos;
@@ -6190,7 +6331,7 @@
   var normalizeReference = utils.normalizeReference;
   var isSpace = utils.isSpace;
   var image = function image(state, silent) {
-    var attrs, code, content, label, labelEnd, labelStart, pos, ref, res, title, token, tokens, start, href = "", oldPos = state.pos, max = state.posMax;
+    var attrs, code, content, label, labelEnd, labelStart, pos, ref, res, title, token, tokens, start, href = "", oldPos = state.pos, max = state.posMax, endPos = state.pos;
     if (state.src.charCodeAt(state.pos) !== 33 /* ! */) {
       return false;
     }
@@ -6202,6 +6343,9 @@
     // parser failed to find ']', so it's not a valid link
         if (labelEnd < 0) {
       return false;
+    }
+    if (state.pending) {
+      state.pushPending();
     }
     pos = labelEnd + 1;
     if (pos < max && state.src.charCodeAt(pos) === 40 /* ( */) {
@@ -6260,6 +6404,7 @@
         state.pos = oldPos;
         return false;
       }
+      endPos = pos;
       pos++;
     } else {
       // Link reference
@@ -6270,12 +6415,15 @@
         start = pos + 1;
         pos = state.md.helpers.parseLinkLabel(state, pos);
         if (pos >= 0) {
+          endPos = pos;
           label = state.src.slice(start, pos++);
         } else {
           pos = labelEnd + 1;
+          endPos = pos;
         }
       } else {
         pos = labelEnd + 1;
+        endPos = pos;
       }
       // covers label === '' and label === undefined
       // (collapsed reference link and shortcut reference link respectively)
@@ -6301,6 +6449,8 @@
       token.attrs = attrs = [ [ "src", href ], [ "alt", "" ] ];
       token.children = tokens;
       token.content = content;
+      token.position = oldPos;
+      token.size = endPos - oldPos + 1;
       if (title) {
         attrs.push([ "title", title ]);
       }
@@ -6338,6 +6488,8 @@
         token.info = "auto";
         token = state.push("text", "", 0);
         token.content = state.md.normalizeLinkText(url);
+        token.position = pos;
+        token.size = token.content.length;
         token = state.push("link_close", "a", -1);
         token.markup = "autolink";
         token.info = "auto";
@@ -6357,6 +6509,8 @@
         token.info = "auto";
         token = state.push("text", "", 0);
         token.content = state.md.normalizeLinkText(url);
+        token.position = pos;
+        token.size = token.content.length;
         token = state.push("link_close", "a", -1);
         token.markup = "autolink";
         token.info = "auto";
@@ -6528,6 +6682,12 @@
             if (tokens[curr].type === "text" && curr + 1 < max && tokens[curr + 1].type === "text") {
         // collapse two adjacent text nodes
         tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
+        // only move foward position when it has content
+                if (tokens[curr].content) {
+          tokens[curr + 1].position = tokens[curr].position;
+        }
+        // add up size
+                tokens[curr + 1].size = tokens[curr].size + tokens[curr + 1].size;
       } else {
         if (curr !== last) {
           tokens[last] = tokens[curr];
@@ -6542,6 +6702,7 @@
   var isWhiteSpace = utils.isWhiteSpace;
   var isPunctChar = utils.isPunctChar;
   var isMdAsciiPunct = utils.isMdAsciiPunct;
+  var getLineOffset = utils.getLineOffset;
   function StateInline(src, md, env, outTokens) {
     this.src = src;
     this.env = env;
@@ -6570,6 +6731,8 @@
     var token$1 = new token("text", "", 0);
     token$1.content = this.pending;
     token$1.level = this.pendingLevel;
+    token$1.size = token$1.content.length;
+    token$1.position = this.pos - token$1.size + getLineOffset(this);
     this.tokens.push(token$1);
     this.pending = "";
     return token$1;
@@ -7998,7 +8161,7 @@
 	 *   highlight: function (str, lang) {
 	 *     if (lang && hljs.getLanguage(lang)) {
 	 *       try {
-	 *         return hljs.highlight(lang, str, true).value;
+	 *         return hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
 	 *       } catch (__) {}
 	 *     }
 	 *
@@ -8018,7 +8181,7 @@
 	 *     if (lang && hljs.getLanguage(lang)) {
 	 *       try {
 	 *         return '<pre class="hljs"><code>' +
-	 *                hljs.highlight(lang, str, true).value +
+	 *                hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
 	 *                '</code></pre>';
 	 *       } catch (__) {}
 	 *     }
