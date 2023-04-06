@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.7 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.10 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -4599,7 +4599,7 @@
   };
   var isSpace$9 = utils.isSpace;
   var blockquote = function blockquote(state, startLine, endLine, silent) {
-    var adjustTab, ch, i, initial, l, lastLineEmpty, lines, nextLine, offset, oldBMarks, oldBSCount, oldIndent, oldParentType, oldSCount, oldTShift, spaceAfterMarker, terminate, terminatorRules, token, isOutdented, oldLineMax = state.lineMax, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine];
+    var adjustTab, ch, i, initial, l, lastLineEmpty, lines, nextLine, offset, oldBMarks, oldBSCount, oldIndent, oldParentType, oldSCount, oldTShift, spaceAfterMarker, terminate, terminatorRules, token, isOutdented, oldLineMax = state.lineMax, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine], start = pos;
     // if it's indented more than 3 spaces, it should be a code block
         if (state.sCount[startLine] - state.blkIndent >= 4) {
       return false;
@@ -4798,6 +4798,7 @@
     token = state.push("blockquote_open", "blockquote", 1);
     token.markup = ">";
     token.map = lines = [ startLine, 0 ];
+    token.position = start;
     state.md.block.tokenize(state, startLine, nextLine);
     token = state.push("blockquote_close", "blockquote", -1);
     token.markup = ">";
@@ -4960,6 +4961,7 @@
             if (isTerminatingParagraph && markerValue !== 1) return false;
     } else if ((posAfterMarker = skipBulletListMarker(state, startLine)) >= 0) {
       isOrdered = false;
+      start = state.bMarks[startLine] + state.tShift[startLine];
     } else {
       return false;
     }
@@ -5874,6 +5876,7 @@
      case 96 /* ` */ :
      case 123 /* { */ :
      case 125 /* } */ :
+     case 124 /* | */ :
      case 126 /* ~ */ :
       return true;
 
