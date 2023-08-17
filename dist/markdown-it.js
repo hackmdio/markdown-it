@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.10 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.11 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -4247,7 +4247,7 @@
   Core.prototype.State = state_core;
   var parser_core = Core;
   var isSpace$a = utils.isSpace;
-  var trimLeftOffset$1 = utils.trimLeftOffset;
+  var trimLeftOffset$2 = utils.trimLeftOffset;
   function getLine(state, line) {
     var pos = state.bMarks[line] + state.tShift[line], max = state.eMarks[line];
     return state.src.substr(pos, max - pos);
@@ -4393,7 +4393,7 @@
       token = state.push("inline", "", 0);
       token.content = columns[i].trim();
       token.children = [];
-      token.position = columnVIndex + trimLeftOffset$1(columns[i]);
+      token.position = columnVIndex + trimLeftOffset$2(columns[i]);
       token.size = token.content.length;
       columnVIndex += columns[i].length;
       token = state.push("th_close", "th", -1);
@@ -4458,7 +4458,7 @@
         token.content = columns[i] ? columns[i].trim() : "";
         token.children = [];
         token.size = token.content.length;
-        token.position = columnVIndex + trimLeftOffset$1(originalContent);
+        token.position = columnVIndex + trimLeftOffset$2(originalContent);
         columnVIndex += originalContent.length;
         token.map = [ nextLine, nextLine + 1 ];
         token = state.push("td_close", "td", -1);
@@ -5380,7 +5380,7 @@
     return true;
   };
   var isSpace$5 = utils.isSpace;
-  var trimLeftOffset = utils.trimLeftOffset;
+  var trimLeftOffset$1 = utils.trimLeftOffset;
   var heading = function heading(state, startLine, endLine, silent) {
     var ch, level, tmp, token, originalPos, originalMax, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine];
     // if it's indented more than 3 spaces, it should be a code block
@@ -5424,7 +5424,7 @@
     token.content = originalContent.trim();
     token.map = [ startLine, state.line ];
     token.children = [];
-    token.position = pos + trimLeftOffset(originalContent);
+    token.position = pos + trimLeftOffset$1(originalContent);
     token.size = max - pos;
     token = state.push("heading_close", "h" + String(level), -1);
     token.markup = "########".slice(0, level);
@@ -5432,8 +5432,8 @@
     token.size = originalMax - max;
     return true;
   };
-  // lheading (---, ===)
-    var lheading = function lheading(state, startLine, endLine /*, silent*/) {
+  var trimLeftOffset = utils.trimLeftOffset;
+  var lheading = function lheading(state, startLine, endLine /*, silent*/) {
     var content, terminate, i, l, token, pos, max, level, marker, nextLine = startLine + 1, oldParentType, terminatorRules = state.md.block.ruler.getRules("paragraph");
     // if it's indented more than 3 spaces, it should be a code block
         if (state.sCount[startLine] - state.blkIndent >= 4) {
@@ -5487,7 +5487,8 @@
       // Didn't find valid underline
       return false;
     }
-    content = state.getLines(startLine, nextLine, state.blkIndent, false).trim();
+    const originalContent = state.getLines(startLine, nextLine, state.blkIndent, false);
+    content = originalContent.trim();
     state.line = nextLine + 1;
     token = state.push("heading_open", "h" + String(level), 1);
     token.markup = String.fromCharCode(marker);
@@ -5498,7 +5499,7 @@
     token.content = content;
     token.map = [ startLine, state.line - 1 ];
     token.children = [];
-    token.position = state.bMarks[startLine];
+    token.position = state.bMarks[startLine] + trimLeftOffset(originalContent);
     token.size = content.length;
     token = state.push("heading_close", "h" + String(level), -1);
     token.markup = String.fromCharCode(marker);
