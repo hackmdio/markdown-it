@@ -5915,13 +5915,16 @@
       if (pmax >= 0 && state.pending.charCodeAt(pmax) === 32) {
         if (pmax >= 1 && state.pending.charCodeAt(pmax - 1) === 32) {
           state.pending = state.pending.replace(/ +$/, "");
-          state.push("hardbreak", "br", 0);
+          const token = state.push("hardbreak", "br", 0);
+          token.position = pos;
         } else {
           state.pending = state.pending.slice(0, -1);
-          state.push("softbreak", "br", 0);
+          const token = state.push("softbreak", "br", 0);
+          token.position = pos;
         }
       } else {
-        state.push("softbreak", "br", 0);
+        const token = state.push("softbreak", "br", 0);
+        token.position = pos;
       }
     }
     pos++;
