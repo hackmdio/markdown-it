@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.11 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.13 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -5895,6 +5895,7 @@
     }
     if (!silent) {
       state.pending += state.src.slice(state.pos, pos);
+      state.posStart.push(state.pos);
     }
     state.pos = pos;
     return true;
@@ -6731,6 +6732,7 @@
     this.md = md;
     this.tokens = outTokens;
     this.tokens_meta = Array(outTokens.length);
+    this.posStart = [];
     this.pos = 0;
     this.posMax = this.src.length;
     this.level = 0;
@@ -6754,7 +6756,7 @@
     token$1.content = this.pending;
     token$1.level = this.pendingLevel;
     token$1.size = token$1.content.length;
-    token$1.position = this.pos - token$1.size + getLineOffset(this);
+    token$1.position = this.posStart.shift() + getLineOffset(this);
     this.tokens.push(token$1);
     this.pending = "";
     return token$1;
