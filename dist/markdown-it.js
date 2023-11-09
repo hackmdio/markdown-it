@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.13 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.15 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -5895,7 +5895,6 @@
     }
     if (!silent) {
       state.pending += state.src.slice(state.pos, pos);
-      state.posStart.push(state.pos);
     }
     state.pos = pos;
     return true;
@@ -6736,7 +6735,18 @@
     this.pos = 0;
     this.posMax = this.src.length;
     this.level = 0;
-    this.pending = "";
+    this._pending = "";
+    Object.defineProperty(this, "pending", {
+      get: function() {
+        return this._pending;
+      },
+      set: function(val) {
+        if (this._pending.length === 0) {
+          this.posStart.push(this.pos);
+        }
+        this._pending = val;
+      }
+    });
     this.pendingLevel = 0;
     // Stores { start: end } pairs. Useful for backtrack
     // optimization of pairs parse (emphasis, strikes).
