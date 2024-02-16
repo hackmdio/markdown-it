@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.17 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.18 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -5764,7 +5764,7 @@
         queue[i] = this.src.slice(first, last);
       }
       if (replaceIndentSpaceWithZWSP) {
-        queue[i] = new Array(lineIndent + 1).join(ZWSP) + queue[i];
+        queue[i] = new Array(first - lineStart + 1).join(ZWSP) + queue[i];
       }
     }
     return queue.join("");
