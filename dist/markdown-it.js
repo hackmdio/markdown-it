@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.15 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.17 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -4590,7 +4590,7 @@
     state.line = nextLine + (haveEndMarker ? 1 : 0);
     token = state.push("fence", "code", 0);
     token.info = params;
-    token.content = state.getLines(startLine + 1, nextLine, len, true);
+    token.content = state.getLines(startLine + 1, nextLine, len, true, true);
     token.markup = markup;
     token.map = [ startLine, state.line ];
     token.position = originalPos;
@@ -5722,9 +5722,11 @@
     }
     return pos;
   };
+  const ZWSP = "\u200b";
+ // zero width space
   // cut lines range from source.
-    StateBlock.prototype.getLines = function getLines(begin, end, indent, keepLastLF) {
-    var i, lineIndent, ch, first, last, queue, lineStart, line = begin;
+    StateBlock.prototype.getLines = function getLines(begin, end, indent, keepLastLF, replaceIndentSpaceWithZWSP) {
+    var i, lineIndent, ch, first, last, queue, lineStart, line = begin, replaceIndentSpaceWithZWSP = replaceIndentSpaceWithZWSP || false;
     if (begin >= end) {
       return "";
     }
@@ -5760,6 +5762,9 @@
         queue[i] = new Array(lineIndent - indent + 1).join(" ") + this.src.slice(first, last);
       } else {
         queue[i] = this.src.slice(first, last);
+      }
+      if (replaceIndentSpaceWithZWSP) {
+        queue[i] = new Array(lineIndent + 1).join(ZWSP) + queue[i];
       }
     }
     return queue.join("");
@@ -5861,13 +5866,17 @@
      case 36 /* $ */ :
      case 37 /* % */ :
      case 38 /* & */ :
+     case 40 /* ( */ :
      case 42 /* * */ :
      case 43 /* + */ :
+     case 44 /* , */ :
      case 45 /* - */ :
+     case 46 /* . */ :
      case 58 /* : */ :
      case 60 /* < */ :
      case 61 /* = */ :
      case 62 /* > */ :
+     case 63 /* ? */ :
      case 64 /* @ */ :
      case 91 /* [ */ :
      case 92 /* \ */ :
