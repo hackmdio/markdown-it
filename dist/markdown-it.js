@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.18 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.19 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -6945,7 +6945,8 @@
         }
         continue;
       }
-      state.pending += state.src[state.pos++];
+      state.pending += state.src[state.pos];
+      state.pos++;
     }
     if (state.pending) {
       state.pushPending();
