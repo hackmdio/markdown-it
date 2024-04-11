@@ -1,10 +1,9 @@
-/*! @hackmd/markdown-it 12.0.19 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.20 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
 })(this, (function() {
   "use strict";
-  var commonjsGlobal = typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : {};
   function createCommonjsModule(fn, basedir, module) {
     return module = {
       path: basedir,
@@ -2893,33 +2892,13 @@
       
             return str.toLowerCase().toUpperCase();
     }
-    /* eslint-env browser */    var _g = typeof commonjsGlobal !== "undefined" ? commonjsGlobal : window;
-    var tokensRef = new _g.WeakMap;
-    // TODO: performance tweaks for emphasis **_* pattern which has only 1/10 performance after adding line offset
-        function getLineOffset(state, tokenIdx) {
-      var blockState = state.env.state_block;
-      var parentToken = state.env.parentToken;
-      var tokensBefore = typeof tokenIdx !== "undefined" ? state.tokens.slice(0, tokenIdx) : state.tokens;
-      var resultsMap = tokensRef.get(state.tokens);
-      if (resultsMap) {
-        var cachedResult = resultsMap.get(tokenIdx);
-        if (typeof cachedResult !== "undefined") {
-          return cachedResult;
-        }
+    function getLineOffset(state) {
+      if (state.env.parentToken.parentType === "blockquote") {
+        const blockState = state.env.state_block;
+        return blockState.lineOffsets[state.currentLine] ?? 0;
       } else {
-        resultsMap = new _g.Map;
-        tokensRef.set(state.tokens, resultsMap);
+        return 0;
       }
-      var linesBefore = tokensBefore.filter((function(t) {
-        return t.type === "softbreak" || t.type === "hardbreak";
-      })).length;
-      var lineOffset = 0;
-      for (var i = 0; i < linesBefore; i++) {
-        var startLine = i + parentToken.map[0] + 1;
-        lineOffset += blockState.tShift[startLine];
-      }
-      resultsMap.set(tokenIdx, lineOffset);
-      return lineOffset;
     }
     function trimLeftOffset(str) {
       return str.length - str.trimLeft().length;
@@ -4805,17 +4784,34 @@
     state.lineMax = oldLineMax;
     state.parentType = oldParentType;
     lines[1] = state.line;
+    let totalLineOffset = 0;
     // Restore original tShift; this might not be necessary since the parser
     // has already been here, but just to make sure we can do that.
         for (i = 0; i < oldTShift.length; i++) {
-      state.bMarks[i + startLine] = oldBMarks[i];
-      state.tShift[i + startLine] = oldTShift[i];
-      state.sCount[i + startLine] = oldSCount[i];
-      state.bsCount[i + startLine] = oldBSCount[i];
+      const lineNumber = i + startLine;
+      if (state.lineOffsets[lineNumber] === null) {
+        state.lineOffsets[lineNumber] = totalLineOffset;
+        if (isNotEmptyLine(state, lineNumber)) {
+          totalLineOffset += calcLineOffset(state, lineNumber);
+        } else {
+          totalLineOffset = 0;
+        }
+      }
+      state.bMarks[lineNumber] = oldBMarks[i];
+      state.tShift[lineNumber] = oldTShift[i];
+      state.sCount[lineNumber] = oldSCount[i];
+      state.bsCount[lineNumber] = oldBSCount[i];
     }
     state.blkIndent = oldIndent;
     return true;
   };
+  function calcLineOffset(state, lineNumber) {
+    const previousLineEnd = state.eMarks[lineNumber - 1] + 1 || 0;
+    return state.bMarks[lineNumber] - previousLineEnd;
+  }
+  function isNotEmptyLine(state, lineNumber) {
+    return state.bMarks[lineNumber] + state.tShift[lineNumber] < state.eMarks[lineNumber];
+  }
   var isSpace$8 = utils.isSpace;
   var hr = function hr(state, startLine, endLine, silent) {
     var marker, cnt, ch, token, originalPos, pos = state.bMarks[startLine] + state.tShift[startLine], max = state.eMarks[startLine];
@@ -5485,6 +5481,7 @@
     }
     if (!level) {
       // Didn't find valid underline
+      state.parentType = oldParentType;
       return false;
     }
     const originalContent = state.getLines(startLine, nextLine, state.blkIndent, false);
@@ -5580,6 +5577,7 @@
  // offsets of the first non-space characters (tabs not expanded)
         this.sCount = [];
  // indents for each line (tabs expanded)
+        this.lineOffsets = [];
     // An amount of virtual spaces (tabs expanded) between beginning
     // of each line (bMarks) and real beginning of that line.
     
@@ -5639,6 +5637,7 @@
         this.tShift.push(indent);
         this.sCount.push(offset);
         this.bsCount.push(0);
+        this.lineOffsets.push(null);
         indent_found = false;
         indent = 0;
         offset = 0;
@@ -5651,6 +5650,7 @@
     this.tShift.push(0);
     this.sCount.push(0);
     this.bsCount.push(0);
+    this.lineOffsets.push(null);
     this.lineMax = this.bMarks.length - 1;
  // don't count last fake line
     }
@@ -5936,6 +5936,7 @@
         token.position = pos;
       }
     }
+    state.currentLine += 1;
     pos++;
     // skip heading spaces for next line
         while (pos < max && isSpace$3(state.src.charCodeAt(pos))) {
@@ -6040,7 +6041,7 @@
     state.pos += openerLength;
     return true;
   };
-  var getLineOffset$2 = utils.getLineOffset;
+  // ~~strike through~~
   // Insert each marker as a separate text token, and add it to delimiter list
   
     var tokenize$1 = function strikethrough(state, silent) {
@@ -6098,7 +6099,7 @@
       token.nesting = 1;
       token.markup = "~~";
       token.content = "";
-      token.position = startDelim.position + getLineOffset$2(state, startDelim.token);
+      token.position = startDelim.position;
       token = state.tokens[endDelim.token];
       token.type = "s_close";
       token.tag = "s";
@@ -6144,7 +6145,7 @@
     tokenize: tokenize$1,
     postProcess: postProcess_1$1
   };
-  var getLineOffset$1 = utils.getLineOffset;
+  // Process *this* and _that_
   // Insert each marker as a separate text token, and add it to delimiter list
   
     var tokenize = function emphasis(state, silent) {
@@ -6210,7 +6211,7 @@
       token.nesting = 1;
       token.markup = isStrong ? ch + ch : ch;
       token.content = "";
-      token.position = startDelim.position + getLineOffset$1(state, startDelim.token);
+      token.position = startDelim.position;
       token = state.tokens[endDelim.token];
       token.type = isStrong ? "strong_close" : "em_close";
       token.tag = isStrong ? "strong" : "em";
@@ -6757,6 +6758,7 @@
       }
     });
     this.pendingLevel = 0;
+    this.currentLine = env.parentToken.map[0];
     // Stores { start: end } pairs. Useful for backtrack
     // optimization of pairs parse (emphasis, strikes).
         this.cache = {};
