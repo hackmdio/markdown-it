@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.20 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.21 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -4375,6 +4375,7 @@
       token.position = columnVIndex + trimLeftOffset$2(columns[i]);
       token.size = token.content.length;
       columnVIndex += columns[i].length;
+      token.map = [ nextLine, nextLine + 1 ];
       token = state.push("th_close", "th", -1);
       token.position = columnVIndex;
       // Last column?
