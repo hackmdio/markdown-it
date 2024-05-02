@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.21 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.22 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -4488,7 +4488,7 @@
     endPos = state.bMarks[last] + state.tShift[last];
     state.line = last;
     token = state.push("code_block", "code", 0);
-    token.content = state.getLines(startLine, last, 4 + state.blkIndent, true);
+    token.content = state.getLines(startLine, last, 4 + state.blkIndent, true, true);
     token.map = [ startLine, state.line ];
     token.position = pos;
     token.size = endPos - pos;
