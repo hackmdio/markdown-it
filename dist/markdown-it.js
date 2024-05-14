@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.22 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.23 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -2893,12 +2893,24 @@
             return str.toLowerCase().toUpperCase();
     }
     function getLineOffset(state) {
-      if (state.env.parentToken.parentType === "blockquote") {
+      if (isInBlockquote(state)) {
         const blockState = state.env.state_block;
         return blockState.lineOffsets[state.currentLine] ?? 0;
       } else {
         return 0;
       }
+    }
+    function isInBlockquote(state) {
+      let count = 0;
+      for (let i = state.env.parentTokenIndex; i >= 0; i--) {
+        const token = state.env.parentState.tokens[i];
+        if (token.type === "blockquote_open" || token.type === "alert_open") {
+          count++;
+        } else if (token.type === "blockquote_close" || token.type === "alert_close") {
+          count--;
+        }
+      }
+      return count > 0;
     }
     function trimLeftOffset(str) {
       return str.length - str.trimLeft().length;
