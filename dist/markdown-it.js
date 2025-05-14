@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 12.0.23 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 12.0.25 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -4803,12 +4803,17 @@
         for (i = 0; i < oldTShift.length; i++) {
       const lineNumber = i + startLine;
       if (state.lineOffsets[lineNumber] === null) {
-        state.lineOffsets[lineNumber] = totalLineOffset;
+        if (i === 0) {
+          // first line of blockquote
+          state.lineOffsets[lineNumber] = 0;
+          continue;
+        }
         if (isNotEmptyLine(state, lineNumber)) {
           totalLineOffset += calcLineOffset(state, lineNumber);
         } else {
           totalLineOffset = 0;
         }
+        state.lineOffsets[lineNumber] = totalLineOffset;
       }
       state.bMarks[lineNumber] = oldBMarks[i];
       state.tShift[lineNumber] = oldTShift[i];
