@@ -1,3 +1,10 @@
+Issue commonmark/cmark#383:
+.
+*****Hello*world****
+.
+<p>**<em><strong>Hello<em>world</em></strong></em></p>
+.
+
 Issue #246.  Double escaping in ALT
 .
 ![&](#)
@@ -42,6 +49,40 @@ Reference labels: support ligatures (equivalent according to unicode case foldin
 <p><a href="/url">ﬀﬁﬂ</a></p>
 .
 
+Reference can be interrupted by other rules
+.
+[foo]: /url 'title
+ - - -
+'
+
+[foo]
+.
+<p>[foo]: /url 'title</p>
+<hr>
+<p>’</p>
+<p>[foo]</p>
+.
+
+Escape character in link reference title doesn't escape newlines
+.
+[foo]: /url "
+hello
+\
+\
+\
+world
+"
+
+[foo]
+.
+<p><a href="/url" title="
+hello
+\
+\
+\
+world
+">foo</a></p>
+.
 
 Issue #35. `<` should work as punctuation
 .
@@ -157,6 +198,27 @@ Regression test (code block + regular paragraph)
 </code></pre>
 <p>bar</p>
 </blockquote>
+.
+
+Regression test (tabs in lists, #830)
+.
+1. asd
+    2. asd
+
+---
+
+1. asd
+	2. asd
+.
+<ol>
+<li>asd
+2. asd</li>
+</ol>
+<hr>
+<ol>
+<li>asd
+2. asd</li>
+</ol>
 .
 
 Blockquotes inside indented lists should terminate correctly
@@ -654,11 +716,27 @@ Issue #772. Header rule should not interfere with html tags.
 </pre>
 .
 
-Newline in image description
+Softbreak in image description
 .
 There is a newline in this image ![here
 it is](https://github.com/executablebooks/)
 .
 <p>There is a newline in this image <img src="https://github.com/executablebooks/" alt="here
 it is"></p>
+.
+
+Hardbreak in image description
+.
+There is a newline in this image ![here\
+it is](https://github.com/executablebooks/)
+.
+<p>There is a newline in this image <img src="https://github.com/executablebooks/" alt="here
+it is"></p>
+.
+
+Html in image description
+.
+![text <textarea> text](image.png)
+.
+<p><img src="image.png" alt="text &lt;textarea&gt; text"></p>
 .
