@@ -6,6 +6,92 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.1.0] - 2024-03-19
+### Changed
+- Updated CM spec compatibility to 0.31.2, #1009.
+
+### Fixed
+- Fixed quadratic complexity when parsing references, #996.
+- Fixed quadratic output size with pathological user input in tables, #1000.
+
+
+## [14.0.0] - 2023-12-08
+### Changed
+- Drop ancient browsers support (use `.fromCodePoint` and other features).
+- Rewrite to ESM (including all plugins/deps). CJS fallback still available.
+  No signatures changed, except `markdown-it-emoji` plugin.
+- Dropped `dist/` folder from repo, build on package publish.
+- Set `punicode.js` as external dependency.
+
+### Fixed
+- Html tokens inside img alt are now rendered as their original text, #896.
+- Hardbreaks inside img alt are now rendered as newlines.
+
+
+## [13.0.2] - 2023-09-26
+### Security
+- Fixed crash/infinite loop caused by linkify inline rule, #957.
+
+### Fixed
+- Throw an error if 3rd party plugin doesn't increment `line` or `pos` counters
+  (previously, markdown-it would likely go into infinite loop instead), #847.
+
+
+## [13.0.1] - 2022-05-03
+### Fixed
+- Bumped `linkify-it` to 4.0.1. That should fix some hangs, caused by wrong
+  data, returned from `linkify-it`.
+
+
+## [13.0.0] - 2022-04-22
+### Added
+- Added a new token type `text_special` to store escaped characters, same as `text` but
+  unaffected by replacement plugins (smartquotes, typographer, linkifier, etc.).
+- Added a new rule `text_join` in `core` ruler. Text replacement plugins may choose to
+  insert themselves before it.
+
+### Changed
+- `(p)` is no longer replaced with § by typographer (conflicts with ℗), #763.
+- `text_collapse` rule is renamed to `fragments_join`.
+
+### Fixed
+- Smartquotes, typographic replacements and plain text links can now be escaped
+  with backslash (e.g. `\(c)` or `google\.com` are no longer replaced).
+- Fixed collision of emphasis and linkifier (so `http://example.org/foo._bar_-_baz`
+  is now a single link, not emphasized). Emails and fuzzy links are not affected by this.
+
+
+## [12.3.2] - 2022-01-08
+### Security
+- Fix possible ReDOS in newline rule. Thanks to @MakeNowJust.
+
+
+## [12.3.1] - 2022-01-07
+### Fixed
+- Fix corner case when tab prevents paragraph continuation in lists, #830.
+
+
+## [12.3.0] - 2021-12-09
+### Changed
+- `StateInline.delimiters[].jump` is removed.
+
+### Fixed
+- Fixed quadratic complexity in pathological `***<10k stars>***a***<10k stars>***` case.
+
+
+## [12.2.0] - 2021-08-02
+### Added
+- Ordered lists: add order value to token info.
+
+### Fixed
+- Always suffix indented code block with a newline, #799.
+
+
+## [12.1.0] - 2021-07-01
+### Changed
+- Updated CM spec compatibility to 0.30.
+
+
 ## [12.0.6] - 2021-04-16
 ### Fixed
 - Newline in `alt` should be rendered, #775.
@@ -562,6 +648,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed presets folder (configs -> presets).
 
 
+[14.1.0]: https://github.com/markdown-it/markdown-it/compare/14.0.0...14.1.0
+[14.0.0]: https://github.com/markdown-it/markdown-it/compare/13.0.2...14.0.0
+[13.0.2]: https://github.com/markdown-it/markdown-it/compare/13.0.1...13.0.2
+[13.0.1]: https://github.com/markdown-it/markdown-it/compare/13.0.0...13.0.1
+[13.0.0]: https://github.com/markdown-it/markdown-it/compare/12.3.2...13.0.0
+[12.3.2]: https://github.com/markdown-it/markdown-it/compare/12.3.1...12.3.2
+[12.3.1]: https://github.com/markdown-it/markdown-it/compare/12.3.0...12.3.1
+[12.3.0]: https://github.com/markdown-it/markdown-it/compare/12.2.0...12.3.0
+[12.2.0]: https://github.com/markdown-it/markdown-it/compare/12.1.0...12.2.0
+[12.1.0]: https://github.com/markdown-it/markdown-it/compare/12.0.6...12.1.0
 [12.0.6]: https://github.com/markdown-it/markdown-it/compare/12.0.5...12.0.6
 [12.0.5]: https://github.com/markdown-it/markdown-it/compare/12.0.4...12.0.5
 [12.0.4]: https://github.com/markdown-it/markdown-it/compare/12.0.3...12.0.4
