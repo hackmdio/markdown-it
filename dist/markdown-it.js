@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 14.1.0 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 14.1.1 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -2628,10 +2628,16 @@
           tokens[curr].type = "text";
         }
       }
-      for (curr = last = 0; curr < max; curr++) {
+      for (curr = last = 0; curr < tokens.length; curr++) {
         if (tokens[curr].type === "text" && curr + 1 < max && tokens[curr + 1].type === "text") {
           // collapse two adjacent text nodes
           tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
+          // only move forward position when left token has content
+                    if (tokens[curr].content) {
+            tokens[curr + 1].position = tokens[curr].position;
+          }
+          // add up size
+                    tokens[curr + 1].size = (tokens[curr].size || 0) + (tokens[curr + 1].size || 0);
         } else {
           if (curr !== last) {
             tokens[last] = tokens[curr];
@@ -2888,6 +2894,10 @@
       }
       if (replaceIndentSpaceWithZWSP) {
         queue[i] = new Array(first - lineStart + 1).join(ZWSP) + queue[i];
+      }
+      // Ensure a trailing LF when requested even if source lacks one
+            if (keepLastLF && !queue[i].endsWith("\n")) {
+        queue[i] += "\n";
       }
     }
     return queue.join("");
@@ -4672,6 +4682,8 @@
       }
       token.markup = origStr;
       token.info = "escape";
+      // size should reflect original source span (including backslash)
+            token.size = origStr.length;
     }
     state.pos = pos + 1;
     return true;
