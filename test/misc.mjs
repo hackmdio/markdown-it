@@ -1,6 +1,7 @@
 import { assert } from 'chai'
 import markdownit from '../index.mjs'
 import forInline from 'markdown-it-for-inline'
+import { stripZeroWidthSpaces } from './patch.mjs'
 
 describe('API', function () {
   it('constructor', function () {
@@ -209,6 +210,7 @@ describe('Misc', function () {
 
   it('Should correctly parse strings without tailing \\n', function () {
     const md = markdownit()
+    md.use(stripZeroWidthSpaces)
 
     assert.strictEqual(md.render('123'), '<p>123</p>\n')
     assert.strictEqual(md.render('123\n'), '<p>123</p>\n')

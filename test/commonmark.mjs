@@ -3,6 +3,7 @@ import { relative } from 'node:path'
 import { load } from 'markdown-it-testgen'
 import markdownit from '../index.mjs'
 import { assert } from 'chai'
+import { stripZeroWidthSpaces } from './patch.mjs'
 
 function normalize (text) {
   return text.replace(/<blockquote>\n<\/blockquote>/g, '<blockquote></blockquote>')
@@ -26,6 +27,7 @@ function generate (path, md) {
 
 describe('CommonMark', function () {
   const md = markdownit('commonmark')
+  md.use(stripZeroWidthSpaces)
 
   generate(fileURLToPath(new URL('fixtures/commonmark/good.txt', import.meta.url)), md)
 })
