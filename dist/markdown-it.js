@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 14.1.1 https://github.com/hackmdio/markdown-it @license MIT */
+/*! @hackmd/markdown-it 14.1.2 https://github.com/hackmdio/markdown-it @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -4587,6 +4587,8 @@
       token_o.info = "auto";
       const token_t = state.push("text", "", 0);
       token_t.content = state.md.normalizeLinkText(url);
+      token_t.position = pos - proto.length;
+      token_t.size = url.length;
       const token_c = state.push("link_close", "a", -1);
       token_c.markup = "linkify";
       token_c.info = "auto";
