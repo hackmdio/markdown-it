@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.1.2] - 2026-09-15
+### Fixed
+- Set `position` and `size` on linkify text tokens so autolink highlights
+  map to the URL instead of the start of the block, #20.
+
+
+## [14.1.1] - 2025-08-28
+### Fixed
+- Handle incorrect `pos`/`size` when `text_special` and `text_join` process
+  escaped links, #19.
+- Restore ZWSP handling after the 14.1.0 merge.
+
+
 ## [14.1.0] - 2024-03-19
 ### Changed
 - Updated CM spec compatibility to 0.31.2, #1009.
@@ -648,6 +661,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed presets folder (configs -> presets).
 
 
+[14.1.2]: https://github.com/hackmdio/markdown-it/compare/b412edd7f252808f14ea03049cd04aebefc401a3...1ecb0cd2a2a4e8807d1b49e57e93cb84f55023fd
+[14.1.1]: https://github.com/hackmdio/markdown-it/compare/6479bb4046afac05328c9d6a9ab6c1e714e444a1...b412edd7f252808f14ea03049cd04aebefc401a3
 [14.1.0]: https://github.com/markdown-it/markdown-it/compare/14.0.0...14.1.0
 [14.0.0]: https://github.com/markdown-it/markdown-it/compare/13.0.2...14.0.0
 [13.0.2]: https://github.com/markdown-it/markdown-it/compare/13.0.1...13.0.2

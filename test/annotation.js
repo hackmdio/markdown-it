@@ -141,4 +141,46 @@ describe('Annotation', function () {
     assertTokenContent(src, tokens[28], 'Monde')
     assertTokenContent(src, tokens[29], '|')
   })
+
+  it('should annotate linkify text tokens with pos/size', function () {
+    const linkifyMd = require('../')({ linkify: true })
+    const src = 'See https://example.org/foo for details'
+    const tokens = linkifyMd.parse(src)
+    const children = tokens[1].children
+    const url = 'https://example.org/foo'
+
+    assert.strictEqual(children[0].type, 'text')
+    assert.strictEqual(children[0].content, 'See ')
+    assertTokenContent(src, children[0], 'See ')
+
+    assert.strictEqual(children[1].type, 'link_open')
+    assert.strictEqual(children[1].markup, 'linkify')
+
+    assert.strictEqual(children[2].type, 'text')
+    assert.strictEqual(children[2].content, url)
+    assert.strictEqual(children[2].position, 4)
+    assert.strictEqual(children[2].size, url.length)
+    assertTokenContent(src, children[2], url)
+
+    assert.strictEqual(children[3].type, 'link_close')
+    assert.strictEqual(children[4].content, ' for details')
+    assertTokenContent(src, children[4], ' for details')
+  })
+
+  it('should annotate multiple linkify text tokens in one block', function () {
+    const linkifyMd = require('../')({ linkify: true })
+    const src = 'text https://example.org/foo and https://hackmd.io/ more'
+    const tokens = linkifyMd.parse(src)
+    const children = tokens[1].children.filter(function (token) {
+      return token.type === 'text' && token.content.indexOf('http') === 0
+    })
+
+    assert.strictEqual(children.length, 2)
+    assert.strictEqual(children[0].position, 5)
+    assert.strictEqual(children[0].size, 'https://example.org/foo'.length)
+    assertTokenContent(src, children[0], 'https://example.org/foo')
+    assert.strictEqual(children[1].position, 33)
+    assert.strictEqual(children[1].size, 'https://hackmd.io/'.length)
+    assertTokenContent(src, children[1], 'https://hackmd.io/')
+  })
 })
