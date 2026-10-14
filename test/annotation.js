@@ -230,6 +230,19 @@ describe('Annotation', function () {
     })
   })
 
+  it('should cover the whole source of a multi-line image', function () {
+    [
+      ['> ![a\n> b](x.png) c', '![a\n> b](x.png)'],
+      ['> ![a](\n> x.png "t"\n> ) c', '![a](\n> x.png "t"\n> )'],
+      ['- ![a\n  b](x.png)', '![a\n  b](x.png)'],
+      ['![a\nb](x.png)', '![a\nb](x.png)']
+    ].forEach(function ([src, image]) {
+      const token = md.parse(src, {}).find(function (t) { return t.type === 'inline' })
+        .children.find(function (t) { return t.type === 'image' })
+      assert.strictEqual(src.substr(token.position, token.size), image, JSON.stringify(src))
+    })
+  })
+
   it('should annotate text after a failed inline rule', function () {
     ['a\n[x] b', '**a**[b]', '[ ] a b'].forEach(function (src) {
       md.parse(src, {}).forEach(function (token) {
