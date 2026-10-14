@@ -1219,29 +1219,21 @@
     
         return str.toLowerCase().toUpperCase();
   }
-  function getLineOffset(state) {
-    if (isInBlockquote(state)) {
-      const blockState = state.env.state_block;
-      const offset = blockState.lineOffsets[state.currentLine];
-      if (!offset) {
-        return 0;
-      }
-      return offset;
-    } else {
+  // Number of source characters dropped by `StateBlock#getLines` between the
+  // first line of the current inline token and `line` (`state.currentLine` by default).
+    function getLineOffset(state, line = state.currentLine) {
+    const blockState = state.env.state_block;
+    // `env` may be reused across `parse` / `parseInline` calls, so make sure
+    // the block state belongs to the document being parsed.
+        if (!blockState || !state.env.parentState || blockState.tokens !== state.env.parentState.tokens) {
       return 0;
     }
-  }
-  function isInBlockquote(state) {
-    let count = 0;
-    for (let i = state.env.parentTokenIndex; i >= 0; i--) {
-      const token = state.env.parentState.tokens[i];
-      if (token.type === "blockquote_open" || token.type === "alert_open") {
-        count++;
-      } else if (token.type === "blockquote_close" || token.type === "alert_close") {
-        count--;
-      }
+    // Nested inline parses (image alt, plugins) produce positions relative to
+    // their own source; the caller maps them.
+        if (state.env.parentToken && state.src !== state.env.parentToken.content) {
+      return 0;
     }
-    return count > 0;
+    return blockState.lineOffsets[line] || 0;
   }
   function trimLeftOffset(str) {
     return str.length - str.trimLeft().length;
@@ -2629,7 +2621,9 @@
         }
       }
       for (curr = last = 0; curr < tokens.length; curr++) {
-        if (tokens[curr].type === "text" && curr + 1 < max && tokens[curr + 1].type === "text") {
+        // Tokens whose content differs in length from the source (entities,
+        // escapes) stay separate, so that `position + index` maps to the source.
+        if (tokens[curr].type === "text" && curr + 1 < max && tokens[curr + 1].type === "text" && tokens[curr].content.length === tokens[curr].size && tokens[curr + 1].content.length === tokens[curr + 1].size) {
           // collapse two adjacent text nodes
           tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
           // only move forward position when left token has content
@@ -2852,15 +2846,33 @@
   const ZWSP = "\u200b";
  // zero width space
   // cut lines range from source.
-    StateBlock.prototype.getLines = function getLines(begin, end, indent, keepLastLF, replaceIndentSpaceWithZWSP) {
+  
+  // Also records `lineOffsets[line]`: the number of source characters dropped
+  // before `line`, counted from `begin` (container markers such as `> `,
+  // stripped indent, minus spaces added when expanding tabs).
+  
+  // - replaceIndentSpaceWithZWSP: prefix each line with one U+200B per dropped
+  //   source character, so that the content has the same length as the source.
+  // - lineInfo: optional `{ srcLineStarts, zwsp, pads }` arrays, receiving for
+  //   each returned line:
+  //   - srcLineStarts: source offset of its first character
+  //     (`srcLineStarts[k] + c` is the source offset of character `c` of line
+  //     `k`, except for the `pads` spaces),
+  //   - zwsp: number of U+200B prepended,
+  //   - pads: number of spaces added for a partially consumed tab; they follow
+  //     the U+200B and stand for the tab before the line text.
+    StateBlock.prototype.getLines = function getLines(begin, end, indent, keepLastLF, replaceIndentSpaceWithZWSP, lineInfo) {
     replaceIndentSpaceWithZWSP = replaceIndentSpaceWithZWSP || false;
     if (begin >= end) {
       return "";
     }
     const queue = new Array(end - begin);
+    let dropped = 0;
     for (let i = 0, line = begin; line < end; line++, i++) {
       let lineIndent = 0;
       const lineStart = this.bMarks[line];
+      // bMarks may have been moved past container markers (blockquotes)
+            const srcLineStart = line > 0 ? this.eMarks[line - 1] + 1 : 0;
       let first = lineStart;
       let last;
       if (line + 1 < end || keepLastLF) {
@@ -2885,15 +2897,31 @@
         }
         first++;
       }
+      let pad = 0;
       if (lineIndent > indent) {
         // partially expanding tabs in code blocks, e.g '\t\tfoobar'
         // with indent=2 becomes '  \tfoobar'
-        queue[i] = new Array(lineIndent - indent + 1).join(" ") + this.src.slice(first, last);
+        pad = lineIndent - indent;
+        queue[i] = " ".repeat(pad) + this.src.slice(first, last);
       } else {
         queue[i] = this.src.slice(first, last);
       }
-      if (replaceIndentSpaceWithZWSP) {
-        queue[i] = new Array(first - lineStart + 1).join(ZWSP) + queue[i];
+      const lineDropped = first - srcLineStart - pad;
+      if (i > 0) {
+        dropped += lineDropped;
+        this.lineOffsets[line] = dropped;
+      } else {
+        this.lineOffsets[line] = 0;
+      }
+      let zwsp = 0;
+      if (replaceIndentSpaceWithZWSP && lineDropped > 0) {
+        zwsp = lineDropped;
+        queue[i] = ZWSP.repeat(zwsp) + queue[i];
+      }
+      if (lineInfo) {
+        lineInfo.srcLineStarts.push(first - pad - zwsp);
+        lineInfo.zwsp.push(zwsp);
+        lineInfo.pads.push(pad);
       }
       // Ensure a trailing LF when requested even if source lacks one
             if (keepLastLF && !queue[i].endsWith("\n")) {
@@ -2901,6 +2929,21 @@
       }
     }
     return queue.join("");
+  };
+  // `token.meta` for code tokens from `getLines` line info
+    StateBlock.prototype.codeLineMeta = function codeLineMeta(lineInfo, zwspIndent) {
+    const meta = {
+      srcLineStarts: lineInfo.srcLineStarts
+    };
+    if (zwspIndent) {
+      meta.indentZwsp = lineInfo.zwsp;
+    }
+    if (lineInfo.pads.some(function(pad) {
+      return pad > 0;
+    })) {
+      meta.srcLinePads = lineInfo.pads;
+    }
+    return meta;
   };
   // re-export Token class to use in block rules
     StateBlock.prototype.Token = Token;
@@ -2916,6 +2959,14 @@
     const pos = state.bMarks[line] + state.tShift[line];
     const max = state.eMarks[line];
     return state.src.slice(pos, max);
+  }
+  // Length of a cell in the source: every `|` left in a cell was `\|`
+    function sourceCellLength(cell) {
+    let length = cell.length;
+    for (let i = cell.indexOf("|"); i !== -1; i = cell.indexOf("|", i + 1)) {
+      length++;
+    }
+    return length;
   }
   function escapedSplit(str) {
     const result = [];
@@ -3066,7 +3117,7 @@
       token_il.position = columnVIndex + trimLeftOffset(columns[i]);
       token_il.size = token_il.content.length;
       token_il.map = [ nextLine, nextLine + 1 ];
-      columnVIndex += columns[i].length;
+      columnVIndex += sourceCellLength(columns[i]);
       const token_hc = state.push("th_close", "th", -1);
       token_hc.position = columnVIndex;
       // Last column?
@@ -3139,7 +3190,7 @@
         token_il.size = token_il.content.length;
         token_il.position = columnVIndex + trimLeftOffset(originalContent);
         token_il.map = [ nextLine, nextLine + 1 ];
-        columnVIndex += originalContent.length;
+        columnVIndex += sourceCellLength(originalContent);
         const token_tdc = state.push("td_close", "td", -1);
         token_tdc.position = columnVIndex;
         // Last column?
@@ -3187,8 +3238,30 @@
     const pos = state.bMarks[startLine];
     const endPos = state.bMarks[last] + state.tShift[last];
     state.line = last;
+    const zwsp = state.md.options.zwspIndent !== false;
+    const lineInfo = {
+      srcLineStarts: [],
+      zwsp: [],
+      pads: []
+    };
+    let content = state.getLines(startLine, last, 4 + state.blkIndent, true, zwsp, lineInfo);
+    if (zwsp) {
+      // token.position skips container markers (`> `) on the first line,
+      // so the first line must not compensate for them.
+      const lead = pos - (startLine > 0 ? state.eMarks[startLine - 1] + 1 : 0);
+      let n = 0;
+      while (n < lead && content.charCodeAt(n) === 8203) {
+        n++;
+      }
+      if (n > 0) {
+        content = content.slice(n);
+        lineInfo.srcLineStarts[0] += n;
+        lineInfo.zwsp[0] -= n;
+      }
+    }
     const token = state.push("code_block", "code", 0);
-    token.content = state.getLines(startLine, last, 4 + state.blkIndent, true, true);
+    token.content = content;
+    token.meta = state.codeLineMeta(lineInfo, zwsp);
     token.map = [ startLine, state.line ];
     token.position = pos;
     token.size = endPos - pos;
@@ -3270,9 +3343,16 @@
     // If a fence has heading spaces, they should be removed from its inner block
         len = state.sCount[startLine];
     state.line = nextLine + (haveEndMarker ? 1 : 0);
+    const zwsp = state.md.options.zwspIndent !== false;
+    const lineInfo = {
+      srcLineStarts: [],
+      zwsp: [],
+      pads: []
+    };
     const token = state.push("fence", "code", 0);
     token.info = params;
-    token.content = state.getLines(startLine + 1, nextLine, len, true, true);
+    token.content = state.getLines(startLine + 1, nextLine, len, true, zwsp, lineInfo);
+    token.meta = state.codeLineMeta(lineInfo, zwsp);
     token.markup = markup;
     token.map = [ startLine, state.line ];
     token.position = originalPos;
@@ -3447,38 +3527,16 @@
     state.lineMax = oldLineMax;
     state.parentType = oldParentType;
     lines[1] = state.line;
-    let totalLineOffset = 0;
     // Restore original tShift; this might not be necessary since the parser
     // has already been here, but just to make sure we can do that.
         for (let i = 0; i < oldTShift.length; i++) {
-      const lineNumber = i + startLine;
-      if (state.lineOffsets[lineNumber] === null) {
-        if (i === 0) {
-          // first line of blockquote
-          state.lineOffsets[lineNumber] = 0;
-          continue;
-        }
-        if (isNotEmptyLine(state, lineNumber)) {
-          totalLineOffset += calcLineOffset(state, lineNumber);
-        } else {
-          totalLineOffset = 0;
-        }
-        state.lineOffsets[lineNumber] = totalLineOffset;
-      }
-      state.bMarks[lineNumber] = oldBMarks[i];
-      state.tShift[lineNumber] = oldTShift[i];
-      state.sCount[lineNumber] = oldSCount[i];
-      state.bsCount[lineNumber] = oldBSCount[i];
+      state.bMarks[i + startLine] = oldBMarks[i];
+      state.tShift[i + startLine] = oldTShift[i];
+      state.sCount[i + startLine] = oldSCount[i];
+      state.bsCount[i + startLine] = oldBSCount[i];
     }
     state.blkIndent = oldIndent;
     return true;
-  }
-  function calcLineOffset(state, lineNumber) {
-    const previousLineEnd = state.eMarks[lineNumber - 1] + 1 || 0;
-    return state.bMarks[lineNumber] - previousLineEnd;
-  }
-  function isNotEmptyLine(state, lineNumber) {
-    return state.bMarks[lineNumber] + state.tShift[lineNumber] < state.eMarks[lineNumber];
   }
   // Horizontal rule
     function hr(state, startLine, endLine, silent) {
@@ -4205,7 +4263,7 @@
     token_i.content = content;
     token_i.map = [ startLine, state.line - 1 ];
     token_i.children = [];
-    token_i.position = state.bMarks[startLine] + trimLeftOffset(originalContent);
+    token_i.position = state.bMarks[startLine] + state.tShift[startLine];
     token_i.size = content.length;
     const token_c = state.push("heading_close", "h" + String(level), -1);
     token_c.markup = String.fromCharCode(marker);
@@ -4373,13 +4431,21 @@
       },
       set: function(val) {
         if (this._pending.length === 0) {
-          this.posStart.push(this.pos);
+          if (val.length > 0) {
+            this.posStart.push(this.pos);
+          }
+        } else if (val.length === 0) {
+          // pending text discarded without being flushed (e.g. by linkify)
+          this.posStart.pop();
         }
         this._pending = val;
       }
     });
     this.pendingLevel = 0;
-    this.currentLine = env.parentToken.map[0];
+    this.startLine = env.parentToken && env.parentToken.map ? env.parentToken.map[0] : 0;
+    // Source line of `pos`, kept in sync by the inline parser
+        this.currentLine = this.startLine;
+    this._newlines = null;
     // Stores { start: end } pairs. Useful for backtrack
     // optimization of pairs parse (emphasis, strikes).
         this.cache = {};
@@ -4403,8 +4469,33 @@
     token.size = token.content.length;
     token.position = this.posStart.shift() + getLineOffset(this);
     this.tokens.push(token);
-    this.pending = "";
+    this._pending = "";
     return token;
+  };
+  // Set `currentLine` to the source line of `pos`. Rules may consume several
+  // lines at once (code spans, html, link destinations) or re-tokenize a range
+  // (link labels), so the line is derived from `pos` instead of being counted.
+  
+    StateInline.prototype.syncCurrentLine = function() {
+    if (this._newlines === null) {
+      this._newlines = [];
+      for (let i = this.src.indexOf("\n"); i !== -1; i = this.src.indexOf("\n", i + 1)) {
+        this._newlines.push(i);
+      }
+    }
+    // number of line breaks before `pos`
+        const newlines = this._newlines;
+    let lo = 0;
+    let hi = newlines.length;
+    while (lo < hi) {
+      const mid = lo + hi >> 1;
+      if (newlines[mid] < this.pos) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    this.currentLine = this.startLine + lo;
   };
   // Push new token to "stream".
   // If pending text exists - flush it as text token
@@ -4581,13 +4672,16 @@
     if (!state.md.validateLink(fullUrl)) return false;
     if (!silent) {
       state.pending = state.pending.slice(0, -proto.length);
+      const lineOffset = getLineOffset(state);
       const token_o = state.push("link_open", "a", 1);
       token_o.attrs = [ [ "href", fullUrl ] ];
       token_o.markup = "linkify";
       token_o.info = "auto";
+      token_o.position = pos - proto.length + lineOffset;
+      token_o.size = url.length;
       const token_t = state.push("text", "", 0);
       token_t.content = state.md.normalizeLinkText(url);
-      token_t.position = pos - proto.length;
+      token_t.position = pos - proto.length + lineOffset;
       token_t.size = url.length;
       const token_c = state.push("link_close", "a", -1);
       token_c.markup = "linkify";
@@ -4616,18 +4710,17 @@
           while (ws >= 1 && state.pending.charCodeAt(ws - 1) === 32) ws--;
           state.pending = state.pending.slice(0, ws);
           const token = state.push("hardbreak", "br", 0);
-          token.position = pos;
+          token.position = pos + getLineOffset(state);
         } else {
           state.pending = state.pending.slice(0, -1);
           const token = state.push("softbreak", "br", 0);
-          token.position = pos;
+          token.position = pos + getLineOffset(state);
         }
       } else {
         const token = state.push("softbreak", "br", 0);
-        token.position = pos;
+        token.position = pos + getLineOffset(state);
       }
     }
-    state.currentLine += 1;
     pos++;
     // skip heading spaces for next line
         while (pos < max && isSpace(state.src.charCodeAt(pos))) {
@@ -4684,6 +4777,7 @@
       }
       token.markup = origStr;
       token.info = "escape";
+      token.position = state.pos + getLineOffset(state);
       // size should reflect original source span (including backslash)
             token.size = origStr.length;
     }
@@ -4691,7 +4785,31 @@
     return true;
   }
   // Parse backticks
-    function backtick(state, silent) {
+  // When a code span crosses lines whose container prefix (`> `, list indent)
+  // was dropped, record where each content line starts in the source:
+  // `meta.contentLineStarts[k]` (content index) maps to
+  // `token.position + meta.srcLineOffsets[k]`.
+    function addCodeInlineLines(state, token, pos, end, contentStart, lineOffset) {
+    const contentLineStarts = [];
+    const srcLineOffsets = [];
+    let line = state.currentLine;
+    let delta = 0;
+    for (let nl = state.src.indexOf("\n", pos); nl !== -1 && nl < end; nl = state.src.indexOf("\n", nl + 1)) {
+      line++;
+      delta = getLineOffset(state, line) - lineOffset;
+      const index = Math.min(Math.max(nl + 1 - contentStart, 0), token.content.length);
+      contentLineStarts.push(index);
+      srcLineOffsets.push(index + delta);
+    }
+    // dropped characters only accumulate, so no delta on the last line means none at all
+        if (delta === 0) return;
+    token.meta = {
+      contentLineStarts: contentLineStarts,
+      srcLineOffsets: srcLineOffsets
+    };
+    token.size = token.content.length + delta;
+  }
+  function backtick(state, silent) {
     let pos = state.pos;
     const ch = state.src.charCodeAt(pos);
     if (ch !== 96 /* ` */) {
@@ -4725,10 +4843,17 @@
         // Found matching closer length.
         if (!silent) {
           const token = state.push("code_inline", "code", 0);
+          const body = state.src.slice(pos, matchStart);
+          const raw = body.replace(/\n/g, " ");
           token.markup = marker;
-          token.content = state.src.slice(pos, matchStart).replace(/\n/g, " ").replace(/^ (.+) $/, "$1");
-          token.position = pos;
+          token.content = raw.replace(/^ (.+) $/, "$1");
+          const contentStart = pos + (raw.length - token.content.length) / 2;
+          const lineOffset = getLineOffset(state);
+          token.position = contentStart + lineOffset;
           token.size = token.content.length;
+          if (raw !== body) {
+            addCodeInlineLines(state, token, pos, matchStart, contentStart, lineOffset);
+          }
         }
         state.pos = matchEnd;
         return true;
@@ -4761,18 +4886,25 @@
     if (len < 2) {
       return false;
     }
+    const lineOffset = getLineOffset(state);
     let token;
+    let offset = 0;
     if (len % 2) {
       token = state.push("text", "", 0);
       token.content = ch;
+      token.position = start + lineOffset;
+      token.size = 1;
+      offset = 1;
       len--;
     }
     for (let i = 0; i < len; i += 2) {
       token = state.push("text", "", 0);
       token.content = ch + ch;
+      token.position = start + offset + i + lineOffset;
+      token.size = 2;
       state.delimiters.push({
         marker: marker,
-        position: start,
+        position: start + offset + i + lineOffset,
         length: 0,
         // disable "rule of 3" length checks meant for emphasis
         token: state.tokens.length - 1,
@@ -4864,11 +4996,15 @@
       return false;
     }
     const scanned = state.scanDelims(state.pos, marker === 42);
+    const lineOffset = getLineOffset(state);
     for (let i = 0; i < scanned.length; i++) {
       const token = state.push("text", "", 0);
       token.content = String.fromCharCode(marker);
+      token.position = start + i + lineOffset;
+      token.size = 1;
       state.delimiters.push({
-        position: state.pos,
+        // Source position of this marker
+        position: token.position,
         // Char code of the starting marker (number).
         marker: marker,
         // Total length of these series of delimiters.
@@ -4916,16 +5052,24 @@
       token_o.nesting = 1;
       token_o.markup = isStrong ? ch + ch : ch;
       token_o.content = "";
-      token_o.position = startDelim.position;
+      // a strong opener also covers the preceding marker
+            token_o.position = isStrong ? delimiters[i - 1].position : startDelim.position;
+      token_o.size = token_o.markup.length;
       const token_c = state.tokens[endDelim.token];
       token_c.type = isStrong ? "strong_close" : "em_close";
       token_c.tag = isStrong ? "strong" : "em";
       token_c.nesting = -1;
       token_c.markup = isStrong ? ch + ch : ch;
       token_c.content = "";
+      token_c.size = token_c.markup.length;
       if (isStrong) {
-        state.tokens[delimiters[i - 1].token].content = "";
-        state.tokens[delimiters[startDelim.end + 1].token].content = "";
+        // the second marker of each pair is covered by the open / close token
+        const second_o = state.tokens[delimiters[i - 1].token];
+        const second_c = state.tokens[delimiters[startDelim.end + 1].token];
+        second_o.content = "";
+        second_o.size = 0;
+        second_c.content = "";
+        second_c.size = 0;
         i--;
       }
     }
@@ -5200,8 +5344,17 @@
       token.attrs = attrs;
       token.children = tokens;
       token.content = content;
-      token.position = oldPos;
+      const lineOffset = getLineOffset(state);
+      token.position = oldPos + lineOffset;
       token.size = endPos - oldPos + 1;
+      // a label or destination on later lines also spans their container prefixes
+            let endLine = state.currentLine;
+      for (let nl = state.src.indexOf("\n", oldPos); nl !== -1 && nl < endPos; nl = state.src.indexOf("\n", nl + 1)) {
+        endLine++;
+      }
+      if (endLine !== state.currentLine) {
+        token.size += getLineOffset(state, endLine) - lineOffset;
+      }
       if (title) {
         attrs.push([ "title", title ]);
       }
@@ -5233,14 +5386,17 @@
         return false;
       }
       if (!silent) {
+        const lineOffset = getLineOffset(state);
         const token_o = state.push("link_open", "a", 1);
         token_o.attrs = [ [ "href", fullUrl ] ];
         token_o.markup = "autolink";
         token_o.info = "auto";
+        token_o.position = start + lineOffset;
+        token_o.size = url.length + 2;
         const token_t = state.push("text", "", 0);
         token_t.content = state.md.normalizeLinkText(url);
-        token_t.position = pos;
-        token_t.size = token_t.content.length;
+        token_t.position = start + 1 + lineOffset;
+        token_t.size = url.length;
         const token_c = state.push("link_close", "a", -1);
         token_c.markup = "autolink";
         token_c.info = "auto";
@@ -5254,14 +5410,17 @@
         return false;
       }
       if (!silent) {
+        const lineOffset = getLineOffset(state);
         const token_o = state.push("link_open", "a", 1);
         token_o.attrs = [ [ "href", fullUrl ] ];
         token_o.markup = "autolink";
         token_o.info = "auto";
+        token_o.position = start + lineOffset;
+        token_o.size = url.length + 2;
         const token_t = state.push("text", "", 0);
         token_t.content = state.md.normalizeLinkText(url);
-        token_t.position = pos;
-        token_t.size = token_t.content.length;
+        token_t.position = start + 1 + lineOffset;
+        token_t.size = url.length;
         const token_c = state.push("link_close", "a", -1);
         token_c.markup = "autolink";
         token_c.info = "auto";
@@ -5330,6 +5489,8 @@
           token.content = isValidEntityCode(code) ? fromCodePoint(code) : fromCodePoint(65533);
           token.markup = match[0];
           token.info = "entity";
+          token.position = pos + getLineOffset(state);
+          token.size = match[0].length;
         }
         state.pos += match[0].length;
         return true;
@@ -5344,6 +5505,8 @@
             token.content = decoded;
             token.markup = match[0];
             token.info = "entity";
+            token.position = pos + getLineOffset(state);
+            token.size = match[0].length;
           }
           state.pos += match[0].length;
           return true;
@@ -5597,12 +5760,16 @@
         }
       }
       if (ok) {
+        state.syncCurrentLine();
         if (state.pos >= end) {
           break;
         }
         continue;
       }
-      state.pending += state.src[state.pos++];
+      // `pending` setter records the start position, so append before moving on
+            state.pending += state.src[state.pos];
+      state.pos++;
+      state.syncCurrentLine();
     }
     if (state.pending) {
       state.pushPending();
@@ -6629,7 +6796,12 @@
       // function (/*str, lang*/) { return ''; }
       highlight: null,
       // Internal protection, recursion limit
-      maxNesting: 100
+      maxNesting: 100,
+      // Prefix fence / code block lines with U+200B for each stripped source
+      // character (indent, `> `), so content length matches the source (except
+      // spaces left by a partly consumed tab, see `token.meta.srcLinePads`).
+      // Source offsets are always available in `token.meta.srcLineStarts`.
+      zwspIndent: true
     },
     components: {
       core: {},
@@ -6665,7 +6837,12 @@
       // function (/*str, lang*/) { return ''; }
       highlight: null,
       // Internal protection, recursion limit
-      maxNesting: 20
+      maxNesting: 20,
+      // Prefix fence / code block lines with U+200B for each stripped source
+      // character (indent, `> `), so content length matches the source (except
+      // spaces left by a partly consumed tab, see `token.meta.srcLinePads`).
+      // Source offsets are always available in `token.meta.srcLineStarts`.
+      zwspIndent: true
     },
     components: {
       core: {
@@ -6707,7 +6884,12 @@
       // function (/*str, lang*/) { return ''; }
       highlight: null,
       // Internal protection, recursion limit
-      maxNesting: 20
+      maxNesting: 20,
+      // Prefix fence / code block lines with U+200B for each stripped source
+      // character (indent, `> `), so content length matches the source (except
+      // spaces left by a partly consumed tab, see `token.meta.srcLinePads`).
+      // Source offsets are always available in `token.meta.srcLineStarts`.
+      zwspIndent: true
     },
     components: {
       core: {
@@ -6848,6 +7030,15 @@
    *   Highlighter `function (str, lang)` should return escaped HTML. It can also
    *   return empty string if the source was not changed and should be escaped
    *   externaly. If result starts with <pre... internal wrapper is skipped.
+   * - __zwspIndent__ - `true`. Prefix each line of fenced and indented code
+   *   blocks with one U+200B per source character stripped by the parser
+   *   (indent, blockquote markers), so content length matches the source,
+   *   except on lines where a tab is only partly consumed by the indent: the
+   *   remaining columns become spaces for one source tab, recorded in
+   *   `token.meta.srcLinePads`. Set `false` to keep content clean. Either way,
+   *   map positions with `token.meta.srcLineStarts` (and `srcLinePads`). When
+   *   enabled, `token.meta.indentZwsp` holds the number of U+200B prepended to
+   *   each line.
    *
    * ##### Example
    *
