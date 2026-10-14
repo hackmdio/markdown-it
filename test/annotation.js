@@ -224,6 +224,12 @@ describe('Annotation', function () {
     assertTokenContent(src, children[children.length - 1], ' d')
   })
 
+  it('should annotate table cells after an escaped pipe', function () {
+    const src = '| a \\| b | c |\n| - | - |\n| d | e |'
+    const cell = md.parse(src, {}).find(function (t) { return t.type === 'inline' && t.content === 'c' })
+    assertTokenContent(src, cell, 'c')
+  })
+
   it('should not use line offsets from another document', function () {
     const env = {}
     md.parse('> a\n> b\n> c\n', env)
