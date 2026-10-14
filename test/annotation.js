@@ -177,6 +177,53 @@ describe('Annotation', function () {
     ].forEach(assertTextTokens)
   })
 
+  it('should annotate inline tokens on every line of a container', function () {
+    const mdLinkify = require('../')({ linkify: true, html: true })
+    const markers = { em_open: '*', strong_open: '**', s_open: '~~', image: '![', link_open: '<' }
+    const lines = 'first\nsecond *em* `code` ~~del~~ ![alt](x.png) <https://x.com> https://y.com end'
+    const sources = [
+      lines,
+      lines.split('\n').map((l, i) => (i ? '  ' : '- ') + l).join('\n'),
+      lines.split('\n').map((l) => '> ' + l).join('\n'),
+      '> a `code\n> span` b\n> c',
+      'see\nhttps://x.com after',
+      '**a** \nb c'
+    ]
+    sources.forEach(function (src) {
+      mdLinkify.parse(src, {}).forEach(function (token) {
+        (token.children || []).forEach(function (child) {
+          if ((child.type === 'text' || child.type === 'code_inline') && child.content && !/\n/.test(src.substr(child.position, child.size))) {
+            assertTokenContent(src, child, child.content)
+          }
+          const marker = markers[child.type]
+          if (marker && (child.type !== 'link_open' || child.markup === 'autolink')) {
+            assert.strictEqual(src.substr(child.position, marker.length), marker, JSON.stringify(src) + ' ' + child.type)
+          }
+        })
+      })
+    })
+  })
+
+  it('should annotate text after a failed inline rule', function () {
+    ['a\n[x] b', '**a**[b]', '[ ] a b'].forEach(function (src) {
+      md.parse(src, {}).forEach(function (token) {
+        (token.children || []).forEach(function (child) {
+          if (child.type === 'text' && child.content) { assertTokenContent(src, child, child.content) }
+        })
+      })
+    })
+  })
+
+  it('should keep escapes and entities as separate positioned tokens', function () {
+    const src = '- a\n  b \\* c &amp; d'
+    const children = md.parse(src, {})[3].children.filter(function (t) { return t.type === 'text' })
+    const escape = children.find(function (t) { return t.content === '*' })
+    const entity = children.find(function (t) { return t.content === '&' })
+    assertTokenContent(src, escape, '\\*')
+    assertTokenContent(src, entity, '&amp;')
+    assertTokenContent(src, children[children.length - 1], ' d')
+  })
+
   it('should not use line offsets from another document', function () {
     const env = {}
     md.parse('> a\n> b\n> c\n', env)
