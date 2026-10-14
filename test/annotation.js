@@ -269,6 +269,35 @@ describe('Annotation', function () {
     })
   })
 
+  it('should map lines of a code span across container prefixes', function () {
+    [
+      ['- first `code\n  spans word here` end\n', true],
+      ['> first `` a\n> b `\n>  c word `` end\n', true],
+      ['1. x `a\n   b`\n', true],
+      ['- > a `x\n  > y word` z\n', true],
+      ['> lazy `x\ny word` z\n', false],
+      ['first `code\nspans word` end\n', false],
+      ['first `code\n   spans word` end\n', false]
+    ].forEach(function ([src, mapped]) {
+      const tokens = require('../')().parse(src, {})
+      const code = tokens.find(function (t) { return t.type === 'inline' }).children
+        .find(function (t) { return t.type === 'code_inline' })
+      assert.strictEqual(Boolean(code.meta), mapped, src)
+      const starts = code.meta ? code.meta.contentLineStarts : []
+      const offsets = code.meta ? code.meta.srcLineOffsets : []
+      // every content char (newlines are rendered as spaces) maps back to the source
+      for (let i = 0; i < code.content.length; i++) {
+        let k = -1
+        while (k + 1 < starts.length && starts[k + 1] <= i) k++
+        const at = k < 0 ? code.position + i : code.position + offsets[k] + i - starts[k]
+        const ch = src[at] === '\n' ? ' ' : src[at]
+        assert.strictEqual(ch, code.content[i], `${JSON.stringify(src)} at ${i}`)
+      }
+      const last = starts.length ? code.position + offsets[offsets.length - 1] + code.content.length - starts[starts.length - 1] : code.position + code.content.length
+      assert.strictEqual(code.position + code.size, last, src)
+    })
+  })
+
   it('should record spaces added for a partially consumed tab', function () {
     [true, false].forEach(function (zwspIndent) {
       const src = '- a\n\n  \t\tfoo\n'
