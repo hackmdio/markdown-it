@@ -141,4 +141,47 @@ describe('Annotation', function () {
     assertTokenContent(src, tokens[28], 'Monde')
     assertTokenContent(src, tokens[29], '|')
   })
+
+  function assertTextTokens (src) {
+    let count = 0
+    md.parse(src, {}).forEach(function (token) {
+      (token.children || []).forEach(function (child) {
+        if (child.type !== 'text' || !child.content) { return }
+        count++
+        assertTokenContent(src, child, child.content)
+      })
+    })
+    assert.isAbove(count, 0)
+  }
+
+  it('should annotate inline text inside containers', function () {
+    [
+      '>a\n> b\n> c\n',
+      '> a\nb *c*\n',
+      '> a\n>\n> b\n> c\n',
+      '> a\n>\n>\n> b\n> c\n',
+      '> # h\n> b\n> c\n',
+      '> a\n>\n> # h\n',
+      '> a\n> b\n> ---\n',
+      '> > a\n> > b\n> > c\n',
+      '> a\n>\n> > b\n> > c\n',
+      '- > a\n  > b\n',
+      '> - a\n>   b\n> - c\n',
+      '- a\n  b\n  c\n',
+      '- a\nb\n',
+      '1. a\n   b\n',
+      '- a\n  b\n  ---\n',
+      '> | a | b |\n> | - | - |\n> | c | d |\n',
+      '>\ta\n>\tb\n',
+      '> a\n> b\n\n> c\n> d\n'
+    ].forEach(assertTextTokens)
+  })
+
+  it('should not use line offsets from another document', function () {
+    const env = {}
+    md.parse('> a\n> b\n> c\n', env)
+    const tokens = md.parseInline('x\ny\nz', env)[0].children
+    assert.strictEqual(tokens[4].content, 'z')
+    assert.strictEqual(tokens[4].position, 4)
+  })
 })
