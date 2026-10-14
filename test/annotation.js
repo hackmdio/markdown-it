@@ -204,6 +204,32 @@ describe('Annotation', function () {
     })
   })
 
+  it('should position each emphasis marker of nested runs', function () {
+    [
+      '***x***',
+      '****x****',
+      '*a **b***',
+      '_**x**_',
+      '> a\n> ***b*** c',
+      '- a\n  **_b_** ***c***'
+    ].forEach(function (src) {
+      md.parse(src, {}).forEach(function (token) {
+        // markers are all alike, so also check that they do not overlap
+        const covered = new Set()
+        ;(token.children || []).forEach(function (child) {
+          if (!/^(em|strong)_(open|close)$/.test(child.type)) { return }
+          const label = JSON.stringify(src) + ' ' + child.type + '@' + child.position
+          assert.strictEqual(child.size, child.markup.length, label)
+          assert.strictEqual(src.substr(child.position, child.size), child.markup, label)
+          for (let i = child.position; i < child.position + child.size; i++) {
+            assert.isFalse(covered.has(i), label + ' overlaps at ' + i)
+            covered.add(i)
+          }
+        })
+      })
+    })
+  })
+
   it('should annotate text after a failed inline rule', function () {
     ['a\n[x] b', '**a**[b]', '[ ] a b'].forEach(function (src) {
       md.parse(src, {}).forEach(function (token) {
