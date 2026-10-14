@@ -237,4 +237,77 @@ describe('Annotation', function () {
     assert.strictEqual(tokens[4].content, 'z')
     assert.strictEqual(tokens[4].position, 4)
   })
+
+  const codeSources = [
+    '```\nfoo\nbar\n```\n',
+    '- a\n\n  ```\n  foo\n  bar\n  ```\n',
+    '> ```\n> foo\n> bar\n> ```\n',
+    '>```\n>foo\n>  bar\n>```\n',
+    '> - a\n>\n>   ```\n>   foo\n>   ```\n',
+    '- > ```\n  > foo\n  > ```\n',
+    '> > ```\n> > foo\n> > ```\n',
+    '    foo\n    bar\n',
+    '    foo\n\n    bar\n',
+    '>     foo\n>     bar\n',
+    '- a\n\n      foo\n      bar\n'
+  ]
+
+  function findCode (tokens) {
+    return tokens.find(function (t) { return t.type === 'fence' || t.type === 'code_block' })
+  }
+
+  it('should keep code content aligned with source using ZWSP', function () {
+    codeSources.forEach(function (src) {
+      const token = findCode(md.parse(src, {}))
+      const base = token.type === 'fence'
+        ? token.position + token.markup.length + token.info.length + 1
+        : token.position
+      for (let i = 0; i < token.content.length; i++) {
+        if (token.content[i] === '\u200B') { continue }
+        assert.strictEqual(src[base + i], token.content[i], JSON.stringify(src) + ' at ' + i)
+      }
+    })
+  })
+
+  it('should record spaces added for a partially consumed tab', function () {
+    [true, false].forEach(function (zwspIndent) {
+      const src = '- a\n\n  \t\tfoo\n'
+      const token = findCode(require('../')({ zwspIndent }).parse(src, {}))
+      const zwsp = zwspIndent ? token.meta.indentZwsp[0] : 0
+      const pad = token.meta.srcLinePads[0]
+      assert.strictEqual(pad, 2)
+      assert.strictEqual(token.content.slice(zwsp), '  foo\n')
+      // the text after the padding maps to the source as usual
+      assert.strictEqual(token.meta.srcLineStarts[0] + zwsp + pad, src.indexOf('foo'))
+    })
+  })
+
+  it('should record the ZWSP prepended to each code line', function () {
+    const clean = require('../')({ zwspIndent: false })
+    codeSources.concat(['- a\n\n  ```\n  \u200Buser zwsp\n  ```\n']).forEach(function (src) {
+      const token = findCode(md.parse(src, {}))
+      const lines = token.content.split('\n')
+      const stripped = lines.map(function (line, k) {
+        return k < token.meta.indentZwsp.length ? line.slice(token.meta.indentZwsp[k]) : line
+      }).join('\n')
+      assert.strictEqual(stripped, findCode(clean.parse(src, {})).content, JSON.stringify(src))
+    })
+  })
+
+  it('should map code lines to source with srcLineStarts', function () {
+    [true, false].forEach(function (zwspIndent) {
+      const md2 = require('../')({ zwspIndent })
+      codeSources.forEach(function (src) {
+        const token = findCode(md2.parse(src, {}))
+        const starts = token.meta.srcLineStarts
+        if (!zwspIndent) { assert.notInclude(token.content, '\u200B') }
+        token.content.split('\n').forEach(function (line, k) {
+          for (let c = 0; c < line.length; c++) {
+            if (line[c] === '\u200B') { continue }
+            assert.strictEqual(src[starts[k] + c], line[c], JSON.stringify(src) + ' line ' + k)
+          }
+        })
+      })
+    })
+  })
 })

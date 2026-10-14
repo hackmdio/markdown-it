@@ -31,3 +31,9 @@ describe('CommonMark', function () {
 
   generate(fileURLToPath(new URL('fixtures/commonmark/good.txt', import.meta.url)), md)
 })
+
+describe('CommonMark (zwspIndent: false)', function () {
+  const md = markdownit('commonmark', { zwspIndent: false })
+
+  generate(fileURLToPath(new URL('fixtures/commonmark/good.txt', import.meta.url)), md)
+})
