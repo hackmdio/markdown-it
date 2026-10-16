@@ -325,6 +325,16 @@ function trimLeftOffset(str) {
   return str.length - str.trimLeft().length;
 }
 
+// Characters `trim()` removes from the start of `str` after its leading
+// spaces and tabs (counted by `tShift`): Unicode whitespace such as U+00A0
+function trimLeftAfterSpaces(str) {
+  let spaces = 0;
+  while (spaces < str.length && (str.charCodeAt(spaces) === 0x20 || str.charCodeAt(spaces) === 0x09)) {
+    spaces++;
+  }
+  return trimLeftOffset(str) - spaces;
+}
+
 // Re-export libraries commonly used in both markdown-it and its plugins,
 // so plugins won't have to depend on them explicitly, which reduces their
 // bundled size (e.g. a browser build).
@@ -351,6 +361,7 @@ var utils = /*#__PURE__*/Object.freeze({
   isWhiteSpace: isWhiteSpace,
   lib: lib,
   normalizeReference: normalizeReference,
+  trimLeftAfterSpaces: trimLeftAfterSpaces,
   trimLeftOffset: trimLeftOffset,
   unescapeAll: unescapeAll,
   unescapeMd: unescapeMd
@@ -2164,9 +2175,12 @@ StateBlock.prototype.getLines = function getLines(begin, end, indent, keepLastLF
     } else {
       this.lineOffsets[line] = 0;
     }
+
+    // as before source mapping: the stripped indent, not container markers,
+    // so the default output is unchanged
     let zwsp = 0;
-    if (replaceIndentSpaceWithZWSP && lineDropped > 0) {
-      zwsp = lineDropped;
+    if (replaceIndentSpaceWithZWSP && first > lineStart) {
+      zwsp = first - lineStart;
       queue[i] = ZWSP.repeat(zwsp) + queue[i];
     }
     if (lineInfo) {
@@ -2513,21 +2527,7 @@ function code(state, startLine, endLine /*, silent */) {
     zwsp: [],
     pads: []
   };
-  let content = state.getLines(startLine, last, 4 + state.blkIndent, true, zwsp, lineInfo);
-  if (zwsp) {
-    // token.position skips container markers (`> `) on the first line,
-    // so the first line must not compensate for them.
-    const lead = pos - (startLine > 0 ? state.eMarks[startLine - 1] + 1 : 0);
-    let n = 0;
-    while (n < lead && content.charCodeAt(n) === 0x200B) {
-      n++;
-    }
-    if (n > 0) {
-      content = content.slice(n);
-      lineInfo.srcLineStarts[0] += n;
-      lineInfo.zwsp[0] -= n;
-    }
-  }
+  const content = state.getLines(startLine, last, 4 + state.blkIndent, true, zwsp, lineInfo);
   const token = state.push('code_block', 'code', 0);
   token.content = content;
   token.meta = state.codeLineMeta(lineInfo, zwsp);
@@ -3625,7 +3625,7 @@ function lheading(state, startLine, endLine /*, silent */) {
   token_i.content = content;
   token_i.map = [startLine, state.line - 1];
   token_i.children = [];
-  token_i.position = state.bMarks[startLine] + state.tShift[startLine];
+  token_i.position = state.bMarks[startLine] + state.tShift[startLine] + trimLeftAfterSpaces(originalContent);
   token_i.size = content.length;
   const token_c = state.push('heading_close', 'h' + String(level), -1);
   token_c.markup = String.fromCharCode(marker);
@@ -3669,7 +3669,9 @@ function paragraph(state, startLine, endLine) {
       break;
     }
   }
-  const content = state.getLines(startLine, nextLine, state.blkIndent, false).trim();
+  const originalContent = state.getLines(startLine, nextLine, state.blkIndent, false);
+  const content = originalContent.trim();
+  const start = pos + state.tShift[startLine] + trimLeftAfterSpaces(originalContent);
   state.line = nextLine;
   const token_o = state.push('paragraph_open', 'p', 1);
   token_o.map = [startLine, state.line];
@@ -3679,11 +3681,11 @@ function paragraph(state, startLine, endLine) {
   token_i.content = content;
   token_i.map = [startLine, state.line];
   token_i.children = [];
-  token_i.position = pos + state.tShift[startLine];
+  token_i.position = start;
   token_i.size = content.length;
   const token_c = state.push('paragraph_close', 'p', -1);
   token_c.size = 0;
-  token_c.position = content.length + pos + state.tShift[startLine];
+  token_c.position = start + content.length;
   state.parentType = oldParentType;
   return true;
 }
@@ -4204,21 +4206,25 @@ function escape(state, silent) {
 // When a code span crosses lines whose container prefix (`> `, list indent)
 // was dropped, record where each content line starts in the source:
 // `meta.contentLineStarts[k]` (content index) maps to
-// `token.position + meta.srcLineOffsets[k]`.
-function addCodeInlineLines(state, token, pos, end, contentStart, lineOffset) {
+// `token.position + meta.srcLineOffsets[k]`. `line` is the line of
+// `contentStart`, with offset `lineOffset`.
+function addCodeInlineLines(state, token, contentStart, line, lineOffset) {
   const contentLineStarts = [];
   const srcLineOffsets = [];
-  let line = state.currentLine;
+  const contentEnd = contentStart + token.content.length;
   let delta = 0;
-  for (let nl = state.src.indexOf('\n', pos); nl !== -1 && nl < end; nl = state.src.indexOf('\n', nl + 1)) {
+  // deltas may decrease (spaces added for a partly consumed tab), so a line
+  // may need mapping even if the last one does not
+  let shifted = false;
+  for (let nl = state.src.indexOf('\n', contentStart); nl !== -1 && nl < contentEnd; nl = state.src.indexOf('\n', nl + 1)) {
     line++;
     delta = getLineOffset(state, line) - lineOffset;
-    const index = Math.min(Math.max(nl + 1 - contentStart, 0), token.content.length);
+    if (delta !== 0) shifted = true;
+    const index = nl + 1 - contentStart;
     contentLineStarts.push(index);
     srcLineOffsets.push(index + delta);
   }
-  // dropped characters only accumulate, so no delta on the last line means none at all
-  if (delta === 0) return;
+  if (!shifted) return;
   token.meta = {
     contentLineStarts,
     srcLineOffsets
@@ -4267,11 +4273,16 @@ function backtick(state, silent) {
         token.markup = marker;
         token.content = raw.replace(/^ (.+) $/, '$1');
         const contentStart = pos + (raw.length - token.content.length) / 2;
-        const lineOffset = getLineOffset(state);
+        // the line of the content: a stripped leading newline starts it on the next one
+        let line = state.currentLine;
+        for (let nl = state.src.indexOf('\n', pos); nl !== -1 && nl < contentStart; nl = state.src.indexOf('\n', nl + 1)) {
+          line++;
+        }
+        const lineOffset = getLineOffset(state, line);
         token.position = contentStart + lineOffset;
         token.size = token.content.length;
         if (raw !== body) {
-          addCodeInlineLines(state, token, pos, matchStart, contentStart, lineOffset);
+          addCodeInlineLines(state, token, contentStart, line, lineOffset);
         }
       }
       state.pos = matchEnd;
@@ -4388,6 +4399,13 @@ function postProcess$1(state, delimiters) {
       token = state.tokens[j];
       state.tokens[j] = state.tokens[i];
       state.tokens[i] = token;
+
+      // the run of markers is contiguous in the source: positions in the new order
+      let position = state.tokens[j].position;
+      for (let k = i; k <= j; k++) {
+        state.tokens[k].position = position;
+        position += state.tokens[k].size;
+      }
     }
   }
 }
@@ -5331,9 +5349,8 @@ var cfg_default = {
     highlight: null,
     // Internal protection, recursion limit
     maxNesting: 100,
-    // Prefix fence / code block lines with U+200B for each stripped source
-    // character (indent, `> `), so content length matches the source (except
-    // spaces left by a partly consumed tab, see `token.meta.srcLinePads`).
+    // Prefix fence / code block lines with U+200B for each stripped indent
+    // character (not container markers such as `> `), as in earlier versions.
     // Source offsets are always available in `token.meta.srcLineStarts`.
     zwspIndent: true
   },
@@ -5378,9 +5395,8 @@ var cfg_zero = {
     highlight: null,
     // Internal protection, recursion limit
     maxNesting: 20,
-    // Prefix fence / code block lines with U+200B for each stripped source
-    // character (indent, `> `), so content length matches the source (except
-    // spaces left by a partly consumed tab, see `token.meta.srcLinePads`).
+    // Prefix fence / code block lines with U+200B for each stripped indent
+    // character (not container markers such as `> `), as in earlier versions.
     // Source offsets are always available in `token.meta.srcLineStarts`.
     zwspIndent: true
   },
@@ -5431,9 +5447,8 @@ var cfg_commonmark = {
     highlight: null,
     // Internal protection, recursion limit
     maxNesting: 20,
-    // Prefix fence / code block lines with U+200B for each stripped source
-    // character (indent, `> `), so content length matches the source (except
-    // spaces left by a partly consumed tab, see `token.meta.srcLinePads`).
+    // Prefix fence / code block lines with U+200B for each stripped indent
+    // character (not container markers such as `> `), as in earlier versions.
     // Source offsets are always available in `token.meta.srcLineStarts`.
     zwspIndent: true
   },
@@ -5588,14 +5603,13 @@ function normalizeLinkText(url) {
  *   return empty string if the source was not changed and should be escaped
  *   externaly. If result starts with <pre... internal wrapper is skipped.
  * - __zwspIndent__ - `true`. Prefix each line of fenced and indented code
- *   blocks with one U+200B per source character stripped by the parser
- *   (indent, blockquote markers), so content length matches the source,
- *   except on lines where a tab is only partly consumed by the indent: the
- *   remaining columns become spaces for one source tab, recorded in
- *   `token.meta.srcLinePads`. Set `false` to keep content clean. Either way,
- *   map positions with `token.meta.srcLineStarts` (and `srcLinePads`). When
- *   enabled, `token.meta.indentZwsp` holds the number of U+200B prepended to
- *   each line.
+ *   blocks with one U+200B per indent character stripped by the parser (not
+ *   container markers such as `> `), as in earlier versions. Set `false` to
+ *   keep content clean. Either way, map positions with
+ *   `token.meta.srcLineStarts`, and `token.meta.srcLinePads` on lines where
+ *   a tab is only partly consumed by the indent (the remaining columns become
+ *   spaces for one source tab). When enabled, `token.meta.indentZwsp` holds
+ *   the number of U+200B prepended to each line.
  *
  * ##### Example
  *
