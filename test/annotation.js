@@ -357,6 +357,25 @@ describe('Annotation', function () {
     })
   })
 
+  it('should map text after whole lines of Unicode whitespace trimmed at the start of a block', function () {
+    ['> \u00a0\n> a\n> b\n', '> \u00a0\n> a\n> b\n> ---\n', '- \u00a0\n  \u00a0\n  a *b*\n  c\n'].forEach(function (src) {
+      const inline = require('../')().parse(src, {}).find(function (t) { return t.type === 'inline' })
+      assert.strictEqual(src[inline.position], 'a', JSON.stringify(src))
+      inline.children.filter(function (t) { return t.type === 'text' }).forEach(function (t) {
+        assert.strictEqual(sourceOf(src, t), t.content, JSON.stringify(src) + ' ' + t.content)
+      })
+    })
+  })
+
+  it('should map pending text spanning lines from its first line', function () {
+    [require('../')().disable('newline'), require('../')('zero').enable('blockquote')].forEach(function (md) {
+      const src = '> a\n> b\n'
+      const text = md.parse(src, {}).find(function (t) { return t.type === 'inline' }).children[0]
+      assert.strictEqual(text.content, 'a\nb')
+      assert.strictEqual(text.position, 2)
+    })
+  })
+
   it('should map code spans starting or ending with a newline', function () {
     [
       ['> `\n> a `\n', 'a'], ['> ` a\n> `\n', 'a'], ['- `\n  a\n  b `\n', 'a\n  b'],
