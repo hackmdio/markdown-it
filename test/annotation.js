@@ -388,8 +388,13 @@ describe('Annotation', function () {
       const src = '> a\n> b\n'
       const text = md.parse(src, {}).find(function (t) { return t.type === 'inline' }).children[0]
       assert.strictEqual(text.content, 'a\nb')
-      assert.strictEqual(text.position, 2)
+      assert.strictEqual(sourceOf(src, text), 'a\n> b')
     })
+    // ending with a newline: not the prefix of the next line
+    const src = '> a\n> `b`\n'
+    const texts = require('../')().disable('newline').parse(src, {}).find(function (t) { return t.type === 'inline' }).children
+    assert.strictEqual(texts[0].content, 'a\n')
+    assert.strictEqual(sourceOf(src, texts[0]), 'a\n')
   })
 
   it('should map code spans starting or ending with a newline', function () {
