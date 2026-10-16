@@ -395,6 +395,11 @@ describe('Annotation', function () {
     const texts = require('../')().disable('newline').parse(src, {}).find(function (t) { return t.type === 'inline' }).children
     assert.strictEqual(texts[0].content, 'a\n')
     assert.strictEqual(sourceOf(src, texts[0]), 'a\n')
+    // text left by an unmatched delimiter on the next line
+    const delimited = '> a\n> *b\n'
+    require('../')().disable('newline').parse(delimited, {}).find(function (t) { return t.type === 'inline' }).children.forEach(function (t) {
+      assert.strictEqual(sourceOf(delimited, t), t.content, JSON.stringify(t.content))
+    })
   })
 
   it('should map code spans starting or ending with a newline', function () {

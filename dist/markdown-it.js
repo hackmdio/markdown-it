@@ -1235,6 +1235,12 @@
     }
     return blockState.lineOffsets[line] || 0;
   }
+  // Whether text tokens `left` and `right` are apart in the source, e.g. text
+  // spanning lines without the newline rule and the container prefix dropped
+  // before the next line: merged, `position + index` would not map to the source.
+    function sourceGap(left, right) {
+    return left.content.length > 0 && right.content.length > 0 && typeof left.position === "number" && typeof right.position === "number" && left.position + left.size !== right.position;
+  }
   function trimLeftOffset(str) {
     return str.length - str.trimLeft().length;
   }
@@ -1287,6 +1293,7 @@
     isWhiteSpace: isWhiteSpace,
     lib: lib,
     normalizeReference: normalizeReference,
+    sourceGap: sourceGap,
     trimLeftOffset: trimLeftOffset,
     trimmedContentStart: trimmedContentStart,
     unescapeAll: unescapeAll,
@@ -2647,8 +2654,9 @@
       }
       for (curr = last = 0; curr < tokens.length; curr++) {
         // Tokens whose content differs in length from the source (entities,
-        // escapes) stay separate, so that `position + index` maps to the source.
-        if (tokens[curr].type === "text" && curr + 1 < max && tokens[curr + 1].type === "text" && tokens[curr].content.length === tokens[curr].size && tokens[curr + 1].content.length === tokens[curr + 1].size) {
+        // escapes), or apart in it, stay separate, so that `position + index`
+        // maps to the source.
+        if (tokens[curr].type === "text" && curr + 1 < max && tokens[curr + 1].type === "text" && tokens[curr].content.length === tokens[curr].size && tokens[curr + 1].content.length === tokens[curr + 1].size && !sourceGap(tokens[curr], tokens[curr + 1])) {
           // collapse two adjacent text nodes
           tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
           // only move forward position when left token has content
@@ -5670,7 +5678,7 @@
             tokens[curr].level = level;
       if (tokens[curr].nesting > 0) level++;
  // opening tag
-            if (tokens[curr].type === "text" && curr + 1 < max && tokens[curr + 1].type === "text") {
+            if (tokens[curr].type === "text" && curr + 1 < max && tokens[curr + 1].type === "text" && !sourceGap(tokens[curr], tokens[curr + 1])) {
         // collapse two adjacent text nodes
         tokens[curr + 1].content = tokens[curr].content + tokens[curr + 1].content;
         // only move foward position when it has content
