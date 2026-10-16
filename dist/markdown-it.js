@@ -1233,17 +1233,17 @@
         if (state.env.parentToken && state.src !== state.env.parentToken.content) {
       return 0;
     }
-    const offsets = blockState.lineOffsets;
-    return (offsets[line] || 0) - (offsets[state.startLine] || 0);
+    return blockState.lineOffsets[line] || 0;
   }
   function trimLeftOffset(str) {
     return str.length - str.trimLeft().length;
   }
   // Line and source position where `content.trim()` starts, for `content`
-  // returned by `state.getLines(line, ...)`. Besides the leading spaces and tabs
-  // (counted by `tShift`), `trim()` removes Unicode whitespace such as U+00A0,
-  // possibly whole lines of it.
-    function trimmedContentStart(state, line, content) {
+  // returned by `state.getLines(line, endLine, ...)`. Besides the leading spaces
+  // and tabs (counted by `tShift`), `trim()` removes Unicode whitespace such as
+  // U+00A0, possibly whole lines of it: the line offsets of the content are
+  // then counted again from the line it starts on (see getLineOffset).
+    function trimmedContentStart(state, line, endLine, content) {
     const trimmed = trimLeftOffset(content);
     let spaces = 0;
     while (spaces < trimmed && (content.charCodeAt(spaces) === 32 || content.charCodeAt(spaces) === 9)) {
@@ -1253,9 +1253,13 @@
     for (let i = spaces; i < trimmed; i++) {
       if (content.charCodeAt(i) === 10 /* \n */) startLine++;
     }
+    const base = startLine > line ? state.lineOffsets[startLine] : 0;
+    if (base !== 0) {
+      for (let l = startLine; l < endLine; l++) state.lineOffsets[l] -= base;
+    }
     return {
       line: startLine,
-      position: state.bMarks[line] + state.tShift[line] + trimmed - spaces + (state.lineOffsets[startLine] || 0)
+      position: state.bMarks[line] + state.tShift[line] + trimmed - spaces + base
     };
   }
   // Re-export libraries commonly used in both markdown-it and its plugins,
@@ -4270,7 +4274,7 @@
     token_o.size = 0;
     const token_i = state.push("inline", "", 0);
     token_i.content = content;
-    const contentStart = trimmedContentStart(state, startLine, originalContent);
+    const contentStart = trimmedContentStart(state, startLine, nextLine, originalContent);
     // inline positions are mapped from the line the content starts on
         token_i.map = [ contentStart.line, state.line - 1 ];
     token_i.children = [];
@@ -4315,7 +4319,7 @@
     }
     const originalContent = state.getLines(startLine, nextLine, state.blkIndent, false);
     const content = originalContent.trim();
-    const {line: contentLine, position: start} = trimmedContentStart(state, startLine, originalContent);
+    const {line: contentLine, position: start} = trimmedContentStart(state, startLine, nextLine, originalContent);
     state.line = nextLine;
     const token_o = state.push("paragraph_open", "p", 1);
     token_o.map = [ startLine, state.line ];

@@ -367,6 +367,22 @@ describe('Annotation', function () {
     })
   })
 
+  it('should count line offsets from the block for an inline token moved to its next line', function () {
+    // as plugins removing a first line of content do (GitHub alert titles)
+    const md = require('../')()
+    md.core.ruler.before('inline', 'drop_first_line', function (state) {
+      const inline = state.tokens.find(function (t) { return t.type === 'inline' })
+      const cut = inline.content.indexOf('\n') + 1
+      inline.content = inline.content.slice(cut)
+      inline.position += cut
+      inline.map = [inline.map[0] + 1, inline.map[1]]
+    })
+    const src = '> title\n> a\n> b\n'
+    const texts = md.parse(src, {}).find(function (t) { return t.type === 'inline' }).children
+      .filter(function (t) { return t.type === 'text' })
+    assert.deepStrictEqual(texts.map(function (t) { return sourceOf(src, t) }), ['a', 'b'])
+  })
+
   it('should map pending text spanning lines from its first line', function () {
     [require('../')().disable('newline'), require('../')('zero').enable('blockquote')].forEach(function (md) {
       const src = '> a\n> b\n'
