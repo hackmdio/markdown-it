@@ -319,20 +319,31 @@ function getLineOffset(state, line = state.currentLine) {
   if (state.env.parentToken && state.src !== state.env.parentToken.content) {
     return 0;
   }
-  return blockState.lineOffsets[line] || 0;
+  const offsets = blockState.lineOffsets;
+  return (offsets[line] || 0) - (offsets[state.startLine] || 0);
 }
 function trimLeftOffset(str) {
   return str.length - str.trimLeft().length;
 }
 
-// Characters `trim()` removes from the start of `str` after its leading
-// spaces and tabs (counted by `tShift`): Unicode whitespace such as U+00A0
-function trimLeftAfterSpaces(str) {
+// Line and source position where `content.trim()` starts, for `content`
+// returned by `state.getLines(line, ...)`. Besides the leading spaces and tabs
+// (counted by `tShift`), `trim()` removes Unicode whitespace such as U+00A0,
+// possibly whole lines of it.
+function trimmedContentStart(state, line, content) {
+  const trimmed = trimLeftOffset(content);
   let spaces = 0;
-  while (spaces < str.length && (str.charCodeAt(spaces) === 0x20 || str.charCodeAt(spaces) === 0x09)) {
+  while (spaces < trimmed && (content.charCodeAt(spaces) === 0x20 || content.charCodeAt(spaces) === 0x09)) {
     spaces++;
   }
-  return trimLeftOffset(str) - spaces;
+  let startLine = line;
+  for (let i = spaces; i < trimmed; i++) {
+    if (content.charCodeAt(i) === 0x0A /* \n */) startLine++;
+  }
+  return {
+    line: startLine,
+    position: state.bMarks[line] + state.tShift[line] + trimmed - spaces + (state.lineOffsets[startLine] || 0)
+  };
 }
 
 // Re-export libraries commonly used in both markdown-it and its plugins,
@@ -361,8 +372,8 @@ var utils = /*#__PURE__*/Object.freeze({
   isWhiteSpace: isWhiteSpace,
   lib: lib,
   normalizeReference: normalizeReference,
-  trimLeftAfterSpaces: trimLeftAfterSpaces,
   trimLeftOffset: trimLeftOffset,
+  trimmedContentStart: trimmedContentStart,
   unescapeAll: unescapeAll,
   unescapeMd: unescapeMd
 });
@@ -3623,9 +3634,11 @@ function lheading(state, startLine, endLine /*, silent */) {
   token_o.size = 0;
   const token_i = state.push('inline', '', 0);
   token_i.content = content;
-  token_i.map = [startLine, state.line - 1];
+  const contentStart = trimmedContentStart(state, startLine, originalContent);
+  // inline positions are mapped from the line the content starts on
+  token_i.map = [contentStart.line, state.line - 1];
   token_i.children = [];
-  token_i.position = state.bMarks[startLine] + state.tShift[startLine] + trimLeftAfterSpaces(originalContent);
+  token_i.position = contentStart.position;
   token_i.size = content.length;
   const token_c = state.push('heading_close', 'h' + String(level), -1);
   token_c.markup = String.fromCharCode(marker);
@@ -3671,7 +3684,10 @@ function paragraph(state, startLine, endLine) {
   }
   const originalContent = state.getLines(startLine, nextLine, state.blkIndent, false);
   const content = originalContent.trim();
-  const start = pos + state.tShift[startLine] + trimLeftAfterSpaces(originalContent);
+  const {
+    line: contentLine,
+    position: start
+  } = trimmedContentStart(state, startLine, originalContent);
   state.line = nextLine;
   const token_o = state.push('paragraph_open', 'p', 1);
   token_o.map = [startLine, state.line];
@@ -3679,7 +3695,8 @@ function paragraph(state, startLine, endLine) {
   token_o.size = 0;
   const token_i = state.push('inline', '', 0);
   token_i.content = content;
-  token_i.map = [startLine, state.line];
+  // inline positions are mapped from the line the content starts on
+  token_i.map = [contentLine, state.line];
   token_i.children = [];
   token_i.position = start;
   token_i.size = content.length;
@@ -3858,7 +3875,9 @@ StateInline.prototype.pushPending = function () {
   token.content = this.pending;
   token.level = this.pendingLevel;
   token.size = token.content.length;
-  token.position = this.posStart.shift() + getLineOffset(this);
+  // the text may span lines (without the newline rule)
+  const start = this.posStart.shift();
+  token.position = start + getLineOffset(this, this.lineAt(start));
   this.tokens.push(token);
   this._pending = '';
   return token;
