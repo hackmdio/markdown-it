@@ -295,16 +295,19 @@ describe('Annotation', function () {
     return tokens.find(function (t) { return t.type === 'fence' || t.type === 'code_block' })
   }
 
-  it('should keep code content aligned with source using ZWSP', function () {
-    codeSources.forEach(function (src) {
-      const token = findCode(md.parse(src, {}))
-      const base = token.type === 'fence'
-        ? token.position + token.markup.length + token.info.length + 1
-        : token.position
-      for (let i = 0; i < token.content.length; i++) {
-        if (token.content[i] === '\u200B') { continue }
-        assert.strictEqual(src[base + i], token.content[i], JSON.stringify(src) + ' at ' + i)
-      }
+  it('should keep the code content of earlier versions by default', function () {
+    // ZWSP stand for the stripped indent only, not container markers
+    const Z = '\u200B';
+    [
+      ['> ```\n> foo\n> bar\n> ```\n', 'foo\nbar\n'],
+      ['> - a\n>\n>   ```\n>   foo\n>   ```\n', Z.repeat(2) + 'foo\n'],
+      ['- > ```\n  > foo\n  > ```\n', 'foo\n'],
+      ['> > ```\n> > foo\n> > ```\n', 'foo\n'],
+      ['    foo\n    bar\n', Z.repeat(4) + 'foo\n' + Z.repeat(4) + 'bar\n'],
+      ['>     foo\n>     bar\n', Z.repeat(4) + 'foo\n' + Z.repeat(4) + 'bar\n'],
+      ['- a\n\n      foo\n      bar\n', Z.repeat(6) + 'foo\n' + Z.repeat(6) + 'bar\n']
+    ].forEach(function ([src, content]) {
+      assert.strictEqual(findCode(md.parse(src, {})).content, content, JSON.stringify(src))
     })
   })
 
@@ -334,6 +337,21 @@ describe('Annotation', function () {
       }
       const last = starts.length ? code.position + offsets[offsets.length - 1] + code.content.length - starts[starts.length - 1] : code.position + code.content.length
       assert.strictEqual(code.position + code.size, last, src)
+    })
+  })
+
+  it('should map lines of a code span whose last line has no offset', function () {
+    // dropped indent (+2), then spaces added for partly consumed tabs (-1 each)
+    const src = '- a `x\n  b\n\tc\n\td` e\n'
+    const code = require('../')().parse(src, {}).find(function (t) { return t.type === 'inline' }).children
+      .find(function (t) { return t.type === 'code_inline' })
+    const starts = code.meta.contentLineStarts
+    Array.from('xbcd').forEach(function (ch) {
+      const i = code.content.indexOf(ch)
+      let k = -1
+      while (k + 1 < starts.length && starts[k + 1] <= i) k++
+      const at = k < 0 ? code.position + i : code.position + code.meta.srcLineOffsets[k] + i - starts[k]
+      assert.strictEqual(src[at], ch, ch)
     })
   })
 
