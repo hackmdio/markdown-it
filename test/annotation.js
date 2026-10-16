@@ -358,7 +358,10 @@ describe('Annotation', function () {
   })
 
   it('should map code spans starting or ending with a newline', function () {
-    [['> `\n> a `\n', 'a'], ['> ` a\n> `\n', 'a'], ['- `\n  a\n  b `\n', 'a\n  b']].forEach(function ([src, source]) {
+    [
+      ['> `\n> a `\n', 'a'], ['> ` a\n> `\n', 'a'], ['- `\n  a\n  b `\n', 'a\n  b'],
+      ['> `a\n> `\n', 'a\n'], ['> `a\n> b\n> `\n', 'a\n> b\n']
+    ].forEach(function ([src, source]) {
       const code = inlineChildren(src).find(function (t) { return t.type === 'code_inline' })
       assert.strictEqual(sourceOf(src, code), source, JSON.stringify(src))
     })
