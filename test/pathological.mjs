@@ -163,5 +163,13 @@ describe('Pathological sequences speed', () => {
     it('hardbreak whitespaces pattern', async () => {
       await test_pattern('x' + ' '.repeat(150000) + 'x  \nx')
     })
+
+    it('many code spans on one line', async () => {
+      await test_pattern('` x` '.repeat(300000))
+    })
+
+    it('many images on one line', async () => {
+      await test_pattern('![x](u) '.repeat(300000))
+    })
   })
 })
