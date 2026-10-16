@@ -1222,18 +1222,29 @@
   // Number of source characters dropped by `StateBlock#getLines` between the
   // first line of the current inline token and `line` (`state.currentLine` by default).
     function getLineOffset(state, line = state.currentLine) {
+    const blockState = sourceBlockState(state);
+    return blockState ? blockState.lineOffsets[line] || 0 : 0;
+  }
+  // Number of spaces added by `StateBlock#getLines` at the start of `line` for
+  // a partially consumed tab: in the inline content, they stand for that tab.
+    function getLinePad(state, line) {
+    const blockState = sourceBlockState(state);
+    return blockState ? blockState.linePads[line] || 0 : 0;
+  }
+  // Block state whose source lines the inline content of `state` comes from
+    function sourceBlockState(state) {
     const blockState = state.env.state_block;
     // `env` may be reused across `parse` / `parseInline` calls, so make sure
     // the block state belongs to the document being parsed.
         if (!blockState || !state.env.parentState || blockState.tokens !== state.env.parentState.tokens) {
-      return 0;
+      return null;
     }
     // Nested inline parses (image alt, plugins) produce positions relative to
     // their own source; the caller maps them.
         if (state.env.parentToken && state.src !== state.env.parentToken.content) {
-      return 0;
+      return null;
     }
-    return blockState.lineOffsets[line] || 0;
+    return blockState;
   }
   // Whether text tokens `left` and `right` are apart in the source, e.g. text
   // spanning lines without the newline rule and the container prefix dropped
@@ -1284,6 +1295,7 @@
     escapeRE: escapeRE$1,
     fromCodePoint: fromCodePoint,
     getLineOffset: getLineOffset,
+    getLinePad: getLinePad,
     has: has,
     isMdAsciiPunct: isMdAsciiPunct,
     isPunctChar: isPunctChar,
@@ -2736,6 +2748,8 @@
         this.sCount = [];
  // indents for each line (tabs expanded)
         this.lineOffsets = [];
+    // spaces added by `getLines` at the start of each line for a partially consumed tab
+        this.linePads = [];
     // An amount of virtual spaces (tabs expanded) between beginning
     // of each line (bMarks) and real beginning of that line.
     
@@ -2953,6 +2967,7 @@
         zwsp = first - lineStart;
         queue[i] = ZWSP.repeat(zwsp) + queue[i];
       }
+      this.linePads[line] = pad;
       if (lineInfo) {
         lineInfo.srcLineStarts.push(first - pad - zwsp);
         lineInfo.zwsp.push(zwsp);
@@ -4824,31 +4839,52 @@
   // When a code span crosses lines whose container prefix (`> `, list indent)
   // was dropped, record where each content line starts in the source:
   // `meta.contentLineStarts[k]` (content index) maps to
-  // `token.position + meta.srcLineOffsets[k]`. `line` is the line of
-  // `contentStart`, with offset `lineOffset`.
+  // `token.position + meta.srcLineOffsets[k]`. On lines starting with spaces
+  // added for a partially consumed tab, `meta.srcLinePads[k]` counts them:
+  // they all stand for the tab before the line text, at
+  // `token.position + meta.srcLineOffsets[k] + meta.srcLinePads[k] - 1`.
+  // `line` is the line of `contentStart`, with offset `lineOffset`.
     function addCodeInlineLines(state, token, contentStart, line, lineOffset) {
     const contentLineStarts = [];
     const srcLineOffsets = [];
+    const srcLinePads = [];
     const contentEnd = contentStart + token.content.length;
     let delta = 0;
     // deltas may decrease (spaces added for a partly consumed tab), so a line
     // may need mapping even if the last one does not
         let shifted = false;
+    const addLine = function(index, pad) {
+      if (delta !== 0 || pad > 0) shifted = true;
+      contentLineStarts.push(index);
+      srcLineOffsets.push(index + delta);
+      srcLinePads.push(pad);
+    };
+    // the content starts at the start of a line (a stripped leading newline):
+    // the token starts at the tab its padding stands for
+        if (state.src.charCodeAt(contentStart - 1) === 10 /* \n */) {
+      const pad = getLinePad(state, line);
+      if (pad > 0) {
+        token.position += pad - 1;
+        lineOffset += pad - 1;
+        delta = 1 - pad;
+        addLine(0, pad);
+      }
+    }
     // a newline ending the content starts no content line
         for (let nl = contentStart; nl < contentEnd - 1; nl++) {
       if (state.src.charCodeAt(nl) !== 10 /* \n */) continue;
       line++;
       delta = getLineOffset(state, line) - lineOffset;
-      if (delta !== 0) shifted = true;
-      const index = nl + 1 - contentStart;
-      contentLineStarts.push(index);
-      srcLineOffsets.push(index + delta);
+      addLine(nl + 1 - contentStart, getLinePad(state, line));
     }
     if (!shifted) return;
     token.meta = {
       contentLineStarts: contentLineStarts,
       srcLineOffsets: srcLineOffsets
     };
+    if (srcLinePads.some(function(pad) {
+      return pad > 0;
+    })) token.meta.srcLinePads = srcLinePads;
     token.size = token.content.length + delta;
   }
   function backtick(state, silent) {

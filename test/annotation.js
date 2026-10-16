@@ -319,7 +319,13 @@ describe('Annotation', function () {
       ['- > a `x\n  > y word` z\n', true],
       ['> lazy `x\ny word` z\n', false],
       ['first `code\nspans word` end\n', false],
-      ['first `code\n   spans word` end\n', false]
+      ['first `code\n   spans word` end\n', false],
+      // spaces added for partially consumed tabs stand for the tab
+      ['- `a\n\tb`\n', true],
+      ['- a `x\n\tb\n\tc` d\n', true],
+      ['- `\n\tb `\n', true],
+      ['- `\n\tb\n\tc `\n', true],
+      ['> - `a\n>\tb`\n', true]
     ].forEach(function ([src, mapped]) {
       const tokens = require('../')().parse(src, {})
       const code = tokens.find(function (t) { return t.type === 'inline' }).children
@@ -327,10 +333,15 @@ describe('Annotation', function () {
       assert.strictEqual(Boolean(code.meta), mapped, src)
       const starts = code.meta ? code.meta.contentLineStarts : []
       const offsets = code.meta ? code.meta.srcLineOffsets : []
+      const pads = (code.meta && code.meta.srcLinePads) || []
       // every content char (newlines are rendered as spaces) maps back to the source
       for (let i = 0; i < code.content.length; i++) {
         let k = -1
         while (k + 1 < starts.length && starts[k + 1] <= i) k++
+        if (k >= 0 && i - starts[k] < (pads[k] || 0)) {
+          assert.strictEqual(src[code.position + offsets[k] + pads[k] - 1], '\t', `${JSON.stringify(src)} padding at ${i}`)
+          continue
+        }
         const at = k < 0 ? code.position + i : code.position + offsets[k] + i - starts[k]
         const ch = src[at] === '\n' ? ' ' : src[at]
         assert.strictEqual(ch, code.content[i], `${JSON.stringify(src)} at ${i}`)
@@ -405,7 +416,9 @@ describe('Annotation', function () {
   it('should map code spans starting or ending with a newline', function () {
     [
       ['> `\n> a `\n', 'a'], ['> ` a\n> `\n', 'a'], ['- `\n  a\n  b `\n', 'a\n  b'],
-      ['> `a\n> `\n', 'a\n'], ['> `a\n> b\n> `\n', 'a\n> b\n']
+      ['> `a\n> `\n', 'a\n'], ['> `a\n> b\n> `\n', 'a\n> b\n'],
+      // from the tab its padding stands for
+      ['- `\n\tb `\n', '\tb']
     ].forEach(function ([src, source]) {
       const code = inlineChildren(src).find(function (t) { return t.type === 'code_inline' })
       assert.strictEqual(sourceOf(src, code), source, JSON.stringify(src))
