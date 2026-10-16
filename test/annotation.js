@@ -277,6 +277,17 @@ describe('Annotation', function () {
     assert.strictEqual(tokens[4].position, 4)
   })
 
+  it('should use line offsets after a core rule replaces the token array', function () {
+    const replacing = require('../')()
+    replacing.core.ruler.before('inline', 'replace_tokens', function (state) {
+      state.tokens = state.tokens.slice()
+    })
+    const src = '> a\n> b\n'
+    const texts = replacing.parse(src, {}).find(function (t) { return t.type === 'inline' }).children
+      .filter(function (t) { return t.type === 'text' })
+    assert.deepStrictEqual(texts.map(function (t) { return sourceOf(src, t) }), ['a', 'b'])
+  })
+
   const codeSources = [
     '```\nfoo\nbar\n```\n',
     '- a\n\n  ```\n  foo\n  bar\n  ```\n',

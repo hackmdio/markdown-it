@@ -1236,7 +1236,7 @@
     const blockState = state.env.state_block;
     // `env` may be reused across `parse` / `parseInline` calls, so make sure
     // the block state belongs to the document being parsed.
-        if (!blockState || !state.env.parentState || blockState.tokens !== state.env.parentState.tokens) {
+        if (!blockState || !state.env.parentState || blockState.coreState !== state.env.parentState) {
       return null;
     }
     // Nested inline parses (image alt, plugins) produce positions relative to
@@ -2262,6 +2262,10 @@
       state.tokens.push(token);
     } else {
       state.md.block.parse(state.src, state.md, state.env, state.tokens);
+      // the block state of this parse (unless a nested parse replaced it), for
+      // the inline rules: later core rules may replace `state.tokens`
+            const blockState = state.env && state.env.state_block;
+      if (blockState && blockState.tokens === state.tokens) blockState.coreState = state;
     }
   }
   function inline(state, positionOffset) {
