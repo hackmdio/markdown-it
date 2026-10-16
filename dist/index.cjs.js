@@ -3878,10 +3878,13 @@ StateInline.prototype.pushPending = function () {
   const token = new Token('text', '', 0);
   token.content = this.pending;
   token.level = this.pendingLevel;
-  token.size = token.content.length;
-  // the text may span lines (without the newline rule)
+  // the text may span lines (without the newline rule); its range ends at its
+  // last character, so a trailing newline does not include the next prefix
   const start = this.posStart.shift();
-  token.position = start + getLineOffset(this, this.lineAt(start));
+  const end = start + token.content.length - 1;
+  const startOffset = getLineOffset(this, this.lineAt(start));
+  token.position = start + startOffset;
+  token.size = token.content.length + (end > start ? getLineOffset(this, this.lineAt(end)) - startOffset : 0);
   this.tokens.push(token);
   this._pending = '';
   return token;
