@@ -4477,6 +4477,11 @@
   // (link labels), so the line is derived from `pos` instead of being counted.
   
     StateInline.prototype.syncCurrentLine = function() {
+    this.currentLine = this.lineAt(this.pos);
+  };
+  // Source line of the character at `pos`.
+  
+    StateInline.prototype.lineAt = function(pos) {
     if (this._newlines === null) {
       this._newlines = [];
       for (let i = this.src.indexOf("\n"); i !== -1; i = this.src.indexOf("\n", i + 1)) {
@@ -4489,13 +4494,13 @@
     let hi = newlines.length;
     while (lo < hi) {
       const mid = lo + hi >> 1;
-      if (newlines[mid] < this.pos) {
+      if (newlines[mid] < pos) {
         lo = mid + 1;
       } else {
         hi = mid;
       }
     }
-    this.currentLine = this.startLine + lo;
+    return this.startLine + lo;
   };
   // Push new token to "stream".
   // If pending text exists - flush it as text token
@@ -4798,7 +4803,9 @@
     // deltas may decrease (spaces added for a partly consumed tab), so a line
     // may need mapping even if the last one does not
         let shifted = false;
-    for (let nl = state.src.indexOf("\n", contentStart); nl !== -1 && nl < contentEnd; nl = state.src.indexOf("\n", nl + 1)) {
+    // a newline ending the content starts no content line
+        for (let nl = contentStart; nl < contentEnd - 1; nl++) {
+      if (state.src.charCodeAt(nl) !== 10 /* \n */) continue;
       line++;
       delta = getLineOffset(state, line) - lineOffset;
       if (delta !== 0) shifted = true;
@@ -4852,11 +4859,8 @@
           token.markup = marker;
           token.content = raw.replace(/^ (.+) $/, "$1");
           const contentStart = pos + (raw.length - token.content.length) / 2;
-          // the line of the content: a stripped leading newline starts it on the next one
-                    let line = state.currentLine;
-          for (let nl = state.src.indexOf("\n", pos); nl !== -1 && nl < contentStart; nl = state.src.indexOf("\n", nl + 1)) {
-            line++;
-          }
+          // a stripped leading newline starts the content on the next line
+                    const line = state.lineAt(contentStart);
           const lineOffset = getLineOffset(state, line);
           token.position = contentStart + lineOffset;
           token.size = token.content.length;
@@ -5363,10 +5367,7 @@
       token.position = oldPos + lineOffset;
       token.size = endPos - oldPos + 1;
       // a label or destination on later lines also spans their container prefixes
-            let endLine = state.currentLine;
-      for (let nl = state.src.indexOf("\n", oldPos); nl !== -1 && nl < endPos; nl = state.src.indexOf("\n", nl + 1)) {
-        endLine++;
-      }
+            const endLine = state.lineAt(endPos);
       if (endLine !== state.currentLine) {
         token.size += getLineOffset(state, endLine) - lineOffset;
       }
