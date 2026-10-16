@@ -340,6 +340,38 @@ describe('Annotation', function () {
     })
   })
 
+  function sourceOf (src, token) {
+    return src.slice(token.position, token.position + token.size)
+  }
+
+  function inlineChildren (src) {
+    return require('../')().parse(src, {}).find(function (t) { return t.type === 'inline' }).children
+  }
+
+  it('should map text after Unicode whitespace trimmed at the start of a block', function () {
+    ['\u00a0Title\n---\n', '\u00a0para\n', '> \u00a0 para\n'].forEach(function (src) {
+      const tokens = require('../')().parse(src, {})
+      const inline = tokens.find(function (t) { return t.type === 'inline' })
+      assert.strictEqual(sourceOf(src, inline), inline.content, JSON.stringify(src))
+      assert.strictEqual(sourceOf(src, inline.children[0]), inline.children[0].content, JSON.stringify(src))
+    })
+  })
+
+  it('should map code spans starting or ending with a newline', function () {
+    [['> `\n> a `\n', 'a'], ['> ` a\n> `\n', 'a'], ['- `\n  a\n  b `\n', 'a\n  b']].forEach(function ([src, source]) {
+      const code = inlineChildren(src).find(function (t) { return t.type === 'code_inline' })
+      assert.strictEqual(sourceOf(src, code), source, JSON.stringify(src))
+    })
+  })
+
+  it('should map strikethrough markers moved after closing tags', function () {
+    ['~~x~~~ end\n', '~~a ~~b~~~~~ c\n'].forEach(function (src) {
+      inlineChildren(src).forEach(function (t) {
+        assert.strictEqual(sourceOf(src, t), t.type === 'text' ? t.content : t.markup, JSON.stringify(src) + ' ' + t.type)
+      })
+    })
+  })
+
   it('should map lines of a code span whose last line has no offset', function () {
     // dropped indent (+2), then spaces added for partly consumed tabs (-1 each)
     const src = '- a `x\n  b\n\tc\n\td` e\n'
