@@ -4311,6 +4311,12 @@ function addCodeInlineLines(state, token, contentStart, line, lineOffset) {
     return pad > 0;
   })) token.meta.srcLinePads = srcLinePads;
   token.size = token.content.length + delta;
+  // ending in the padding of its last line (a stripped trailing space): the
+  // content ends with the tab the padding stands for
+  const last = contentLineStarts.length - 1;
+  if (token.content.length - contentLineStarts[last] < srcLinePads[last]) {
+    token.size = srcLineOffsets[last] + srcLinePads[last];
+  }
 }
 function backtick(state, silent) {
   let pos = state.pos;

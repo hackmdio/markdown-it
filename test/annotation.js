@@ -325,7 +325,11 @@ describe('Annotation', function () {
       ['- a `x\n\tb\n\tc` d\n', true],
       ['- `\n\tb `\n', true],
       ['- `\n\tb\n\tc `\n', true],
-      ['> - `a\n>\tb`\n', true]
+      ['> - `a\n>\tb`\n', true],
+      // ending in the padding of its last line
+      ['- ` a\n\t`\n', true],
+      ['- ` a\n\tb\n\t`\n', true],
+      ['- `\n\t`\n', true]
     ].forEach(function ([src, mapped]) {
       const tokens = require('../')().parse(src, {})
       const code = tokens.find(function (t) { return t.type === 'inline' }).children
@@ -346,7 +350,11 @@ describe('Annotation', function () {
         const ch = src[at] === '\n' ? ' ' : src[at]
         assert.strictEqual(ch, code.content[i], `${JSON.stringify(src)} at ${i}`)
       }
-      const last = starts.length ? code.position + offsets[offsets.length - 1] + code.content.length - starts[starts.length - 1] : code.position + code.content.length
+      const k = starts.length - 1
+      const inPadding = k >= 0 && code.content.length - starts[k] < (pads[k] || 0)
+      const last = k < 0
+        ? code.position + code.content.length
+        : code.position + offsets[k] + (inPadding ? pads[k] : code.content.length - starts[k])
       assert.strictEqual(code.position + code.size, last, src)
     })
   })
@@ -418,7 +426,9 @@ describe('Annotation', function () {
       ['> `\n> a `\n', 'a'], ['> ` a\n> `\n', 'a'], ['- `\n  a\n  b `\n', 'a\n  b'],
       ['> `a\n> `\n', 'a\n'], ['> `a\n> b\n> `\n', 'a\n> b\n'],
       // from the tab its padding stands for
-      ['- `\n\tb `\n', '\tb']
+      ['- `\n\tb `\n', '\tb'],
+      // through the tab its padding stands for
+      ['- ` a\n\t`\n', 'a\n\t'], ['- ` a\n\tb\n\t`\n', 'a\n\tb\n\t']
     ].forEach(function ([src, source]) {
       const code = inlineChildren(src).find(function (t) { return t.type === 'code_inline' })
       assert.strictEqual(sourceOf(src, code), source, JSON.stringify(src))
