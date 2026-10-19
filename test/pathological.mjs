@@ -41,16 +41,20 @@ describe('Pathological sequences speed', () => {
 
   // Ported from cmark, https://github.com/commonmark/cmark/blob/master/test/pathological_tests.py
   describe('Cmark', () => {
-    it('verify original source crc', async () => {
+    // Watches upstream for new pathological patterns to port. It needs network
+    // and fails whenever upstream edits the file, so it only runs when
+    // CMARK_PATHOLOGICAL_CHECK=1 (scheduled CI), not in regular test runs.
+    const checkUpstream = process.env.CMARK_PATHOLOGICAL_CHECK === '1';
+    (checkUpstream ? it : it.skip)('verify original source crc (CMARK_PATHOLOGICAL_CHECK=1)', async () => {
       /* eslint-disable  max-len */
+      const tracked = JSON.parse(readFileSync(new URL('./pathological.json', import.meta.url)))
       const src = await needle('get', 'https://raw.githubusercontent.com/commonmark/cmark/master/test/pathological_tests.py')
       const src_md5 = crypto.createHash('md5').update(src.body).digest('hex')
-      const tracked_md5 = JSON.parse(readFileSync(new URL('./pathological.json', import.meta.url))).md5
 
       assert.strictEqual(
         src_md5,
-        tracked_md5,
-        'CRC or cmark pathological tests hanged. Verify and update pathological.json'
+        tracked.md5,
+        `cmark pathological tests changed since ${tracked.commit}: port new patterns from https://github.com/commonmark/cmark/compare/${tracked.commit}...master, then update pathological.json`
       )
     })
 
