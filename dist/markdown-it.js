@@ -2902,16 +2902,25 @@
   // before `line`, counted from `begin` (container markers such as `> `,
   // stripped indent, minus spaces added when expanding tabs).
   
-  // - replaceIndentSpaceWithZWSP: prefix each line with one U+200B per dropped
-  //   source character, so that the content has the same length as the source.
+  // - replaceIndentSpaceWithZWSP: prefix each line with one U+200B per stripped
+  //   indent character (not container markers such as `> `).
   // - lineInfo: optional `{ srcLineStarts, zwsp, pads }` arrays, receiving for
-  //   each returned line:
-  //   - srcLineStarts: source offset of its first character
-  //     (`srcLineStarts[k] + c` is the source offset of character `c` of line
-  //     `k`, except for the `pads` spaces),
+  //   each returned line `k`:
+  //   - srcLineStarts: base source offset of the line,
   //   - zwsp: number of U+200B prepended,
-  //   - pads: number of spaces added for a partially consumed tab; they follow
-  //     the U+200B and stand for the tab before the line text.
+  //   - pads: number of spaces added for a partially consumed tab.
+  
+  //   Line `k` is `zwsp[k]` U+200B, then `pads[k]` spaces, then the line text.
+  //   The partially consumed tab is counted both by the last U+200B and by the
+  //   spaces, so the line is `pads[k]` characters longer than its source, and
+  //   the source offset of character `c` depends on its part:
+  //   - U+200B (`c < zwsp[k]`): `srcLineStarts[k] + pads[k] + c`, the stripped
+  //     indent character it stands for,
+  //   - padding (`c < zwsp[k] + pads[k]`): the tab, at
+  //     `srcLineStarts[k] + zwsp[k] + pads[k] - 1`,
+  //   - line text: `srcLineStarts[k] + c`.
+  //   Without a partially consumed tab (`pads[k]` is 0), every character maps
+  //   to `srcLineStarts[k] + c`.
     StateBlock.prototype.getLines = function getLines(begin, end, indent, keepLastLF, replaceIndentSpaceWithZWSP, lineInfo) {
     replaceIndentSpaceWithZWSP = replaceIndentSpaceWithZWSP || false;
     if (begin >= end) {
@@ -7127,7 +7136,11 @@
    *   `token.meta.srcLineStarts`, and `token.meta.srcLinePads` on lines where
    *   a tab is only partly consumed by the indent (the remaining columns become
    *   spaces for one source tab). When enabled, `token.meta.indentZwsp` holds
-   *   the number of U+200B prepended to each line.
+   *   the number of U+200B prepended to each line. With `z = indentZwsp[k]`
+   *   and `p = srcLinePads[k]` (each 0 when absent), character `c` of line `k` is at
+   *   source offset `srcLineStarts[k] + p + c` if `c < z` (U+200B), at the tab
+   *   `srcLineStarts[k] + z + p - 1` if `c < z + p` (padding), and
+   *   `srcLineStarts[k] + c` otherwise.
    *
    * ##### Example
    *

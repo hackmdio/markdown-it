@@ -299,11 +299,54 @@ describe('Annotation', function () {
     '    foo\n    bar\n',
     '    foo\n\n    bar\n',
     '>     foo\n>     bar\n',
-    '- a\n\n      foo\n      bar\n'
+    '- a\n\n      foo\n      bar\n',
+    // tabs partially consumed by the indent
+    '- a\n\n  ```\n\tfoo\n  ```\n',
+    '- a\n\n  \t\tfoo\n',
+    '- a\n\n  ```\n \t\tfoo\n\tbar\n  ```\n',
+    '> - a\n>\n>   ```\n>\t\tfoo\n>   ```\n'
   ]
 
   function findCode (tokens) {
     return tokens.find(function (t) { return t.type === 'fence' || t.type === 'code_block' })
+  }
+
+  // Source offset of character `c` of line `k` of a fence / code_block token,
+  // following the rule documented on `StateBlock#getLines`
+  function codeSourceOffset (token, k, c) {
+    const zwsp = token.meta.indentZwsp ? token.meta.indentZwsp[k] : 0
+    const pad = token.meta.srcLinePads ? token.meta.srcLinePads[k] : 0
+    const start = token.meta.srcLineStarts[k]
+    if (c < zwsp) { return start + pad + c }
+    if (c < zwsp + pad) { return start + zwsp + pad - 1 }
+    return start + c
+  }
+
+  // Checks every character of a code token against the source: U+200B stand
+  // for stripped indent, padding spaces for a tab, other characters for themselves.
+  function assertCodeMapsToSource (src, token, label) {
+    const zwspCounts = token.meta.indentZwsp
+    const pads = token.meta.srcLinePads
+    token.content.split('\n').forEach(function (line, k) {
+      const zwsp = zwspCounts ? zwspCounts[k] : 0
+      const pad = pads ? pads[k] : 0
+      // the U+200B stand for the `zwsp` source characters right before the line text
+      const textStart = token.meta.srcLineStarts[k] + zwsp + pad
+      for (let c = 0; c < line.length; c++) {
+        const at = codeSourceOffset(token, k, c)
+        const where = label + ' line ' + k + ' col ' + c
+        if (c < zwsp) {
+          assert.strictEqual(line[c], '\u200B', where)
+          assert.strictEqual(at, textStart - zwsp + c, where + ': U+200B maps to the stripped indent')
+          assert.match(src[at], /^[ \t]$/, where + ': U+200B maps to indent')
+        } else if (c < zwsp + pad) {
+          assert.strictEqual(line[c], ' ', where)
+          assert.strictEqual(src[at], '\t', where + ': padding maps to the tab')
+        } else {
+          assert.strictEqual(src[at], line[c], where)
+        }
+      }
+    })
   }
 
   it('should keep the code content of earlier versions by default', function () {
@@ -499,15 +542,63 @@ describe('Annotation', function () {
       const md2 = require('../')({ zwspIndent })
       codeSources.forEach(function (src) {
         const token = findCode(md2.parse(src, {}))
-        const starts = token.meta.srcLineStarts
         if (!zwspIndent) { assert.notInclude(token.content, '\u200B') }
-        token.content.split('\n').forEach(function (line, k) {
-          for (let c = 0; c < line.length; c++) {
-            if (line[c] === '\u200B') { continue }
-            assert.strictEqual(src[starts[k] + c], line[c], JSON.stringify(src) + ' line ' + k)
+        assertCodeMapsToSource(src, token, JSON.stringify(src))
+      })
+    })
+  })
+
+  it('should map U+200B on a line with a partially consumed tab to the stripped indent', function () {
+    const src = '- a\n\n  ```\n\tfoo\n  ```\n'
+    const token = findCode(require('../')().parse(src, {}))
+    assert.strictEqual(token.content, '\u200B  foo\n')
+    assert.deepStrictEqual(token.meta.indentZwsp, [1])
+    assert.deepStrictEqual(token.meta.srcLinePads, [2])
+    const tab = src.indexOf('\tfoo')
+    // the U+200B and both padding spaces stand for the tab
+    assert.strictEqual(codeSourceOffset(token, 0, 0), tab)
+    assert.strictEqual(codeSourceOffset(token, 0, 1), tab)
+    assert.strictEqual(codeSourceOffset(token, 0, 2), tab)
+    assert.strictEqual(codeSourceOffset(token, 0, 3), tab + 1)
+  })
+
+  it('should map every character of generated code blocks to the source', function () {
+    let seed = 42
+    function rnd (n) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return (seed >>> 16) % n
+    }
+    function pick (list) { return list[rnd(list.length)] }
+    const indents = ['', ' ', '  ', '   ', '    ', '\t', ' \t', '  \t', '\t\t', ' \t\t', '\u200B', '  \u200B']
+    const texts = ['x', 'a b', '\tc', '> q', '- l', '\u200Bz', '']
+    const mds = [require('../')(), require('../')({ zwspIndent: false })]
+
+    for (let n = 0; n < 400; n++) {
+      const lines = []
+      for (let i = rnd(4) + 1; i > 0; i--) lines.push(pick(indents) + pick(texts))
+      let block
+      if (rnd(3) === 0) {
+        block = lines.map(function (line) { return pick(['    ', '\t', '     ', '  \t']) + line })
+      } else {
+        const fenceIndent = pick(['', ' ', '  ', '   '])
+        block = [fenceIndent + '```'].concat(lines, [fenceIndent + '```'])
+      }
+      const container = pick([
+        { first: '', rest: '' }, { first: '> ', rest: '> ' }, { first: '>', rest: '>' },
+        { first: '- ', rest: '  ' }, { first: '- ', rest: '\t' }, { first: '1. ', rest: '   ' },
+        { first: '> - ', rest: '>   ' }, { first: '- > ', rest: '  > ' }
+      ])
+      const src = ['p', ''].concat(block).map(function (line, i) {
+        return (i === 0 ? container.first : container.rest) + line
+      }).join('\n') + '\n'
+
+      mds.forEach(function (md) {
+        md.parse(src, {}).forEach(function (token) {
+          if (token.type === 'fence' || token.type === 'code_block') {
+            assertCodeMapsToSource(src, token, JSON.stringify(src))
           }
         })
       })
-    })
+    }
   })
 })
