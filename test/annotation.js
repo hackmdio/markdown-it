@@ -288,6 +288,38 @@ describe('Annotation', function () {
     assert.deepStrictEqual(texts.map(function (t) { return sourceOf(src, t) }), ['a', 'b'])
   })
 
+  it('should map inline content without env', function () {
+    const src = '> a\n> *b*\n'
+    const texts = md.parse(src).find(function (t) { return t.type === 'inline' }).children
+      .filter(function (t) { return t.type === 'text' })
+    assert.deepStrictEqual(texts.map(function (t) { return sourceOf(src, t) }), ['a', 'b'])
+    const inline = md.parseInline('a *b*')[0].children.find(function (t) { return t.content === 'b' })
+    assert.strictEqual(inline.position, 3)
+  })
+
+  it('should keep line offsets when a block rule parses a nested document with the same env', function () {
+    const nesting = require('../')()
+    nesting.block.ruler.before('paragraph', 'nested', function (state, startLine, endLine, silent) {
+      const start = state.bMarks[startLine] + state.tShift[startLine]
+      if (state.src.slice(start, start + 3) !== '%%%') return false
+      if (silent) return true
+      state.md.parse('> x\n> y\n', state.env)
+      state.line = startLine + 1
+      return true
+    })
+    const src = '%%%\n\n> a\n> *b*\n'
+    const texts = nesting.parse(src, {}).find(function (t) { return t.type === 'inline' }).children
+      .filter(function (t) { return t.type === 'text' })
+    assert.deepStrictEqual(texts.map(function (t) { return sourceOf(src, t) }), ['a', 'b'])
+  })
+
+  it('should annotate hardbreaks with a backslash', function () {
+    const src = '> a\\\n> b'
+    const hardbreak = md.parse(src, {}).find(function (t) { return t.type === 'inline' }).children
+      .find(function (t) { return t.type === 'hardbreak' })
+    assertTokenContent(src, hardbreak, '\\\n')
+  })
+
   const codeSources = [
     '```\nfoo\nbar\n```\n',
     '- a\n\n  ```\n  foo\n  bar\n  ```\n',

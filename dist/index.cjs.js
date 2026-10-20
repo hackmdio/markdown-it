@@ -321,12 +321,10 @@ function getLinePad(state, line) {
 
 // Block state whose source lines the inline content of `state` comes from
 function sourceBlockState(state) {
-  const blockState = state.env.state_block;
-  // `env` may be reused across `parse` / `parseInline` calls, so make sure
-  // the block state belongs to the document being parsed.
-  if (!blockState || !state.env.parentState || blockState.coreState !== state.env.parentState) {
-    return null;
-  }
+  // the block state of the document being parsed: `env` may be reused
+  // across parses, and nested parses replace `env.state_block`
+  const blockState = state.env.parentState && state.env.parentState.blockState;
+  if (!blockState) return null;
   // Nested inline parses (image alt, plugins) produce positions relative to
   // their own source; the caller maps them.
   if (state.env.parentToken && state.src !== state.env.parentToken.content) {
@@ -1440,6 +1438,8 @@ function StateCore(src, md, env) {
   this.env = env;
   this.tokens = [];
   this.inlineMode = false;
+  // block state of the parse (see the `block` core rule), for source positions
+  this.blockState = null;
   this.md = md; // link to parser instance
 }
 
@@ -1471,11 +1471,9 @@ function block(state) {
     token.children = [];
     state.tokens.push(token);
   } else {
-    state.md.block.parse(state.src, state.md, state.env, state.tokens);
-    // the block state of this parse (unless a nested parse replaced it), for
-    // the inline rules: later core rules may replace `state.tokens`
-    const blockState = state.env && state.env.state_block;
-    if (blockState && blockState.tokens === state.tokens) blockState.coreState = state;
+    // kept on the core state: block rules may parse nested documents with
+    // the same `env`, replacing `env.state_block`
+    state.blockState = state.md.block.parse(state.src, state.md, state.env, state.tokens) || null;
   }
 }
 
@@ -2155,7 +2153,12 @@ const ZWSP = '\u200B'; // zero width space
 //
 // Also records `lineOffsets[line]`: the number of source characters dropped
 // before `line`, counted from `begin` (container markers such as `> `,
-// stripped indent, minus spaces added when expanding tabs).
+// stripped indent, minus spaces added when expanding tabs), and `linePads`.
+// Every call overwrites them for `[begin, end)`, and `trimmedContentStart`
+// rebases them in place: the inline content of a block maps to the source
+// through the values of the last call for its lines, so a rule that only
+// probes lines (e.g. to look ahead) and does not use the content for them
+// changes how a later token on these lines is mapped.
 //
 // - replaceIndentSpaceWithZWSP: prefix each line with one U+200B per stripped
 //   indent character (not container markers such as `> `).
@@ -3846,7 +3849,9 @@ ParserBlock.prototype.tokenize = function (state, startLine, endLine) {
 /**
  * ParserBlock.parse(str, md, env, outTokens)
  *
- * Process input string and push block tokens into `outTokens`
+ * Process input string and push block tokens into `outTokens`. Returns the
+ * block state of the parse (nothing for an empty string), whose line offsets
+ * map the inline content to the source.
  **/
 ParserBlock.prototype.parse = function (src, md, env, outTokens) {
   if (!src) {
@@ -3854,6 +3859,7 @@ ParserBlock.prototype.parse = function (src, md, env, outTokens) {
   }
   const state = new this.State(src, md, env, outTokens);
   this.tokenize(state, state.line, state.lineMax);
+  return state;
 };
 ParserBlock.prototype.State = StateBlock;
 
@@ -3888,8 +3894,9 @@ function StateInline(src, md, env, outTokens) {
   });
   this.pendingLevel = 0;
   this.startLine = env.parentToken && env.parentToken.map ? env.parentToken.map[0] : 0;
-  // Source line of `pos`, kept in sync by the inline parser
-  this.currentLine = this.startLine;
+  // Source line of `pos`, kept in sync by the inline parser (see `currentLine`)
+  this._linePos = 0;
+  this._currentLine = this.startLine;
   this._newlines = null;
 
   // Stores { start: end } pairs. Useful for backtrack
@@ -3934,8 +3941,22 @@ StateInline.prototype.pushPending = function () {
 // (link labels), so the line is derived from `pos` instead of being counted.
 //
 StateInline.prototype.syncCurrentLine = function () {
-  this.currentLine = this.lineAt(this.pos);
+  // looked up when read: the parser syncs after every character
+  this._linePos = this.pos;
+  this._currentLine = null;
 };
+
+// Source line of `pos` when the parser last synced it.
+//
+Object.defineProperty(StateInline.prototype, 'currentLine', {
+  get: function () {
+    if (this._currentLine === null) this._currentLine = this.lineAt(this._linePos);
+    return this._currentLine;
+  },
+  set: function (line) {
+    this._currentLine = line;
+  }
+});
 
 // Source line of the character at `pos`.
 //
@@ -4233,7 +4254,10 @@ function escape(state, silent) {
   let ch1 = state.src.charCodeAt(pos);
   if (ch1 === 0x0A) {
     if (!silent) {
-      state.push('hardbreak', 'br', 0);
+      const token = state.push('hardbreak', 'br', 0);
+      // the backslash and the newline
+      token.position = state.pos + getLineOffset(state);
+      token.size = 2;
     }
     pos++;
     // skip leading whitespaces from next line
@@ -5707,7 +5731,18 @@ function normalizeLinkText(url) {
  *   and `p = srcLinePads[k]` (each 0 when absent), character `c` of line `k` is at
  *   source offset `srcLineStarts[k] + p + c` if `c < z` (U+200B), at the tab
  *   `srcLineStarts[k] + z + p - 1` if `c < z + p` (padding), and
- *   `srcLineStarts[k] + c` otherwise.
+ *   `srcLineStarts[k] + c` otherwise. `srcLineStarts` are absolute source
+ *   offsets, like `token.position`: code that shifts positions (e.g. by the
+ *   length of a front matter) shifts them too. Multi-line `code_inline`
+ *   tokens instead record `meta.srcLineOffsets`, relative to
+ *   `token.position`, which stay valid when positions shift. `fence` and
+ *   `code_block` tokens always have a `meta` object: plugins should add to
+ *   it rather than replace it, which drops the mapping.
+ *
+ * Positions (`token.position`, `token.size` and the offsets in `meta`) are
+ * offsets into the source after the `normalize` core rule, which turns CRLF
+ * and lone CR into LF and NUL into U+FFFD, counted in UTF-16 code units. For
+ * a source with CRLF line breaks, normalize it the same way before mapping.
  *
  * ##### Example
  *
@@ -6055,6 +6090,7 @@ MarkdownIt.prototype.parse = function (src, env) {
   if (typeof src !== 'string') {
     throw new Error('Input data should be a String');
   }
+  env = env || {};
   const state = new this.core.State(src, this, env);
   this.core.process(state);
   return state.tokens;
@@ -6086,6 +6122,7 @@ MarkdownIt.prototype.render = function (src, env) {
  * tokens in `children` property. Also updates `env` object.
  **/
 MarkdownIt.prototype.parseInline = function (src, env) {
+  env = env || {};
   const state = new this.core.State(src, this, env);
   state.inlineMode = true;
   this.core.process(state);
