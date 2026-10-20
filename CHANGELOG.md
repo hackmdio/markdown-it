@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.2.0] - Unreleased
+### Added
+- `zwspIndent` option (`true` by default, the output of earlier versions):
+  `false` keeps the content of fenced and indented code blocks without the
+  U+200B prepended for each stripped indent character.
+- Source mapping of code: `meta.srcLineStarts`, `meta.indentZwsp` and
+  `meta.srcLinePads` on `fence` and `code_block` tokens (absolute offsets),
+  and `meta.contentLineStarts`, `meta.srcLineOffsets` and `meta.srcLinePads`
+  on `code_inline` tokens spanning lines (offsets relative to
+  `token.position`). See the `zwspIndent` option for the mapping rule.
+- `utils.getLinePad`, `utils.sourceGap` and `utils.trimmedContentStart`.
+- `ParserBlock#parse` returns its block state, also kept on the core state
+  as `state.blockState`.
+
+### Changed
+- `text_join` no longer merges text with escapes and entities (or with text
+  apart from it in the source), so that `position + index` maps to the
+  source: `a &amp; b` is now 3 `text` children. Rendered HTML is unchanged,
+  but rules that run after `text_join` and match a pattern in one `text`
+  token may need to look at adjacent `text` tokens.
+- `fence` and `code_block` tokens always have a `meta` object: plugins should
+  add to it rather than replace it.
+- The inline `map[0]` of paragraphs and setext headings moves to the first
+  line with content when leading lines are only Unicode whitespace.
+- `size` of autolink, entity, emphasis, code span and backslash hardbreak
+  tokens covers their source markup.
+- `parse` and `parseInline` default `env` to `{}`, as `render` does.
+- `StateBlock#getLines` records the line offsets of the lines it returns,
+  overwriting those of earlier calls.
+
+### Fixed
+- Positions of inline tokens in containers (blockquotes, lists), after lines
+  whose prefix or indent was stripped, and with partially consumed tabs.
+- Positions after escaped pipes in tables, of nested strong emphasis markers
+  and of multi-line images.
+- Line offsets lost for the whole document when a block rule parses a nested
+  document with the same `env`.
+- Quadratic time of line offset lookups in nested containers.
+
+
 ## [14.1.0] - 2024-03-19
 ### Changed
 - Updated CM spec compatibility to 0.31.2, #1009.
