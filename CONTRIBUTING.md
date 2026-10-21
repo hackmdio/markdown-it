@@ -4,6 +4,8 @@
 2. Run `./benchmark/benchmark.mjs`, make sure that performance not degraded.
 3. DON'T include auto-generated browser files to commit.
 
+Maintainers: see [RELEASING.md](RELEASING.md) for publishing to npm.
+
 ### Other things:
 
 1. Prefer [gitter](https://gitter.im/markdown-it/markdown-it) for short "questions".

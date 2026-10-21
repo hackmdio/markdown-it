@@ -1,0 +1,107 @@
+name: Publish to npm
+
+# Uses npm trusted publishing (OIDC): no npm token is stored in this repo.
+# The trusted publisher on npmjs.com must name this file (publish.yml) and
+# the `npm` environment.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Run every step but call `npm publish --dry-run`
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Use Node.js 24
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Ensure npm >= 11.5.1 (trusted publishing)
+      run: |
+        current="$(npm --version)"
+        if [ "$(printf '%s\n' 11.5.1 "$current" | sort -V | head -n1)" != 11.5.1 ]; then
+          npm install -g npm@11
+        fi
+        npm --version
+
+    - name: Check version and tag
+      id: version
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+        REF_TYPE: ${{ github.ref_type }}
+        REF_NAME: ${{ github.ref_name }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        name="$(node -p 'require("./package.json").name')"
+        version="$(node -p 'require("./package.json").version')"
+
+        if [ "$EVENT_NAME" = release ]; then
+          tag="$RELEASE_TAG"
+        elif [ "$REF_TYPE" = tag ]; then
+          tag="$REF_NAME"
+        elif [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
+          tag=""
+        else
+          echo "::error::Run this workflow from a release tag or from $DEFAULT_BRANCH, not '$REF_NAME'."
+          exit 1
+        fi
+
+        if [ -n "$tag" ] && [ "${tag#v}" != "$version" ]; then
+          echo "::error::Tag '$tag' does not match package.json version '$version'."
+          exit 1
+        fi
+
+        if [ "$(npm view "$name@$version" version 2>/dev/null)" = "$version" ]; then
+          echo "::error::$name@$version is already published on npm. Bump the version first."
+          exit 1
+        fi
+
+        case "$version" in
+          *-*) dist_tag=next ;;
+          *) dist_tag=latest ;;
+        esac
+
+        echo "Publishing $name@$version with dist-tag '$dist_tag'"
+        echo "dist-tag=$dist_tag" >> "$GITHUB_OUTPUT"
+
+    - run: npm ci
+
+    - name: Test
+      run: npm test
+
+    - name: Build dist/
+      run: |
+        npm run build
+        if [ -n "$(git status --porcelain -- dist/)" ]; then
+          echo "::warning::The committed dist/ was stale; publishing the freshly built files."
+        fi
+
+    - name: Publish
+      env:
+        DIST_TAG: ${{ steps.version.outputs.dist-tag }}
+        DRY_RUN: ${{ inputs.dry-run && '--dry-run' || '' }}
+      run: npm publish --access public --provenance --tag "$DIST_TAG" $DRY_RUN
