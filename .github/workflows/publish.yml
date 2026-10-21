@@ -2,7 +2,9 @@ name: Publish to npm
 
 # Uses npm trusted publishing (OIDC): no npm token is stored in this repo.
 # The trusted publisher on npmjs.com must name this file (publish.yml) and
-# the `npm` environment.
+# the `npm` environment. npm checks the top-level workflow, so keep this a
+# standalone workflow (bump-version.yml dispatches it) rather than turning
+# it into a reusable workflow_call target.
 
 on:
   release:
