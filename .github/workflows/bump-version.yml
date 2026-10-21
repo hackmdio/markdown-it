@@ -82,12 +82,6 @@ jobs:
           exit 1
         fi
 
-        if grep -q "^## \[$version\] - Unreleased" CHANGELOG.md; then
-          sed -i "s/^## \[$version\] - Unreleased/## [$version] - $(date -u +%Y-%m-%d)/" CHANGELOG.md
-        elif ! grep -q "^## \[$version\]" CHANGELOG.md; then
-          echo "::warning::CHANGELOG.md has no section for $version."
-        fi
-
         echo "Bumped to $version"
         echo "version=$version" >> "$GITHUB_OUTPUT"
         echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -106,7 +100,7 @@ jobs:
       run: |
         git config user.name 'github-actions[bot]'
         git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-        git add -f dist/ package.json package-lock.json CHANGELOG.md
+        git add -f dist/ package.json package-lock.json
         git commit -m "chore: release $VERSION [skip ci]"
         git tag -a "$TAG" -m "$TAG"
         git show --stat HEAD
@@ -124,18 +118,7 @@ jobs:
         VERSION: ${{ steps.bump.outputs.version }}
         TAG: ${{ steps.bump.outputs.tag }}
       run: |
-        awk -v v="$VERSION" '
-          index($0, "## [" v "]") == 1 { found = 1; next }
-          found && /^## \[/ { exit }
-          found { print }
-        ' CHANGELOG.md > release-notes.md
-
-        args=(--verify-tag --title "$TAG")
-        if [ -s release-notes.md ]; then
-          args+=(--notes-file release-notes.md)
-        else
-          args+=(--generate-notes)
-        fi
+        args=(--verify-tag --title "$TAG" --generate-notes)
         case "$VERSION" in *-*) args+=(--prerelease) ;; esac
 
         gh release create "$TAG" "${args[@]}"
