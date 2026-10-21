@@ -9,7 +9,10 @@
     "markdown-it",
     "markdown-it-plugin"
   ],
-  "repository": "hackmdio/markdown-it",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hackmdio/markdown-it.git"
+  },
   "license": "MIT",
   "main": "dist/index.cjs.js",
   "module": "index.mjs",

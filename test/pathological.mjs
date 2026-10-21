@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import { Worker as JestWorker } from 'jest-worker'
 import { readFileSync } from 'fs'
 
-async function test_pattern (str) {
+async function in_worker (fn, timeout) {
   const worker = new JestWorker(
     new URL('./pathological_worker.js', import.meta.url),
     {
@@ -18,9 +18,9 @@ async function test_pattern (str) {
 
   try {
     result = await Promise.race([
-      worker.render(str),
+      fn(worker),
       new Promise((resolve, reject) => {
-        setTimeout(() => reject(new Error('Terminated (timeout exceeded)')), 3000).unref()
+        setTimeout(() => reject(new Error('Terminated (timeout exceeded)')), timeout).unref()
       })
     ])
   } finally {
@@ -29,6 +29,26 @@ async function test_pattern (str) {
   }
 
   return result
+}
+
+function test_pattern (str) {
+  return in_worker(worker => worker.render(str), 3000)
+}
+
+// For inputs that are slow to render even in linear time, a fixed time limit
+// can't tell linear from quadratic on runners of different speeds, so compare
+// the time for `unit` repeated `n` and `4 * n` times instead: about 4x when
+// linear, up to 16x when quadratic.
+function test_linear (unit, n) {
+  return in_worker(async worker => {
+    await worker.time(unit.repeat(n / 10), 1)
+    const small = await worker.time(unit.repeat(n), 2)
+    const large = await worker.time(unit.repeat(4 * n), 2)
+    assert.ok(
+      large < small * 6,
+      `4x input took ${(large / small).toFixed(1)}x as long (${Math.round(small)}ms, ${Math.round(large)}ms), expected linear`
+    )
+  }, 30000)
 }
 
 describe('Pathological sequences speed', () => {
@@ -169,11 +189,11 @@ describe('Pathological sequences speed', () => {
     })
 
     it('many code spans on one line', async () => {
-      await test_pattern('` x` '.repeat(300000))
+      await test_linear('` x` ', 50000)
     })
 
     it('many images on one line', async () => {
-      await test_pattern('![x](u) '.repeat(300000))
+      await test_linear('![x](u) ', 50000)
     })
   })
 })
