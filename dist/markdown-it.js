@@ -1,4 +1,4 @@
-/*! @hackmd/markdown-it 14.1.3 https://github.com/[object Object] @license MIT */
+/*! @hackmd/markdown-it 14.2.0 https://github.com/[object Object] @license MIT */
 (function(global, factory) {
   typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() : typeof define === "function" && define.amd ? define(factory) : (global = typeof globalThis !== "undefined" ? globalThis : global || self, 
   global.markdownit = factory());
@@ -2909,21 +2909,22 @@
   //   indent character (not container markers such as `> `).
   // - lineInfo: optional `{ srcLineStarts, zwsp, pads }` arrays, receiving for
   //   each returned line `k`:
-  //   - srcLineStarts: base source offset of the line,
+  //   - srcLineStarts: source offset of the first character of the line (its
+  //     first U+200B, padding space or text character), so the starts are
+  //     increasing and each lies in its own source line,
   //   - zwsp: number of U+200B prepended,
   //   - pads: number of spaces added for a partially consumed tab.
   
   //   Line `k` is `zwsp[k]` U+200B, then `pads[k]` spaces, then the line text.
-  //   The partially consumed tab is counted both by the last U+200B and by the
-  //   spaces, so the line is `pads[k]` characters longer than its source, and
-  //   the source offset of character `c` depends on its part:
-  //   - U+200B (`c < zwsp[k]`): `srcLineStarts[k] + pads[k] + c`, the stripped
-  //     indent character it stands for,
-  //   - padding (`c < zwsp[k] + pads[k]`): the tab, at
-  //     `srcLineStarts[k] + zwsp[k] + pads[k] - 1`,
-  //   - line text: `srcLineStarts[k] + c`.
-  //   Without a partially consumed tab (`pads[k]` is 0), every character maps
-  //   to `srcLineStarts[k] + c`.
+  //   With `s = srcLineStarts[k]`, `z = zwsp[k]` and `p = pads[k]`, the line
+  //   text starts in the source at `t = s + 1` when `p > 0` and `z` is 0, else
+  //   at `t = s + z`, and the source offset of character `c` depends on its part:
+  //   - U+200B (`c < z`): `s + c`, the stripped indent character it stands for
+  //     (the last one is the partially consumed tab, if any),
+  //   - padding (`c < z + p`): the tab, at `t - 1`,
+  //   - line text: `t + c - z - p`.
+  //   Without a partially consumed tab (`p` is 0), every character maps to
+  //   `s + c`.
     StateBlock.prototype.getLines = function getLines(begin, end, indent, keepLastLF, replaceIndentSpaceWithZWSP, lineInfo) {
     replaceIndentSpaceWithZWSP = replaceIndentSpaceWithZWSP || false;
     if (begin >= end) {
@@ -2985,7 +2986,9 @@
       }
       this.linePads[line] = pad;
       if (lineInfo) {
-        lineInfo.srcLineStarts.push(first - pad - zwsp);
+        // with padding but no U+200B the line starts with the spaces, which
+        // stand for the tab consumed last, right before `first`
+        lineInfo.srcLineStarts.push(pad > 0 && zwsp === 0 ? first - 1 : first - zwsp);
         lineInfo.zwsp.push(zwsp);
         lineInfo.pads.push(pad);
       }
@@ -7159,11 +7162,14 @@
    *   `token.meta.srcLineStarts`, and `token.meta.srcLinePads` on lines where
    *   a tab is only partly consumed by the indent (the remaining columns become
    *   spaces for one source tab). When enabled, `token.meta.indentZwsp` holds
-   *   the number of U+200B prepended to each line. With `z = indentZwsp[k]`
-   *   and `p = srcLinePads[k]` (each 0 when absent), character `c` of line `k` is at
-   *   source offset `srcLineStarts[k] + p + c` if `c < z` (U+200B), at the tab
-   *   `srcLineStarts[k] + z + p - 1` if `c < z + p` (padding), and
-   *   `srcLineStarts[k] + c` otherwise. `srcLineStarts` are absolute source
+   *   the number of U+200B prepended to each line. `srcLineStarts[k]` is the
+   *   source offset of the first character of line `k`. With
+   *   `s = srcLineStarts[k]`, `z = indentZwsp[k]` and `p = srcLinePads[k]`
+   *   (each 0 when absent), the line text starts in the source at `t = s + 1`
+   *   if `p > 0` and `z` is 0, else at `t = s + z`, and character `c` of line
+   *   `k` is at source offset `s + c` if `c < z` (U+200B), at the tab `t - 1`
+   *   if `c < z + p` (padding), and `t + c - z - p` otherwise; without padding,
+   *   simply `s + c`. `srcLineStarts` are absolute source
    *   offsets, like `token.position`: code that shifts positions (e.g. by the
    *   length of a front matter) shifts them too. Multi-line `code_inline`
    *   tokens instead record `meta.srcLineOffsets`, relative to
