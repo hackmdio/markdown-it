@@ -6,7 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [14.2.0] - Unreleased
+## [14.2.0] - 2026-11-18
+### Changed
+- `meta.srcLineStarts` of `fence` and `code_block` tokens is the source offset
+  of the first character of each line, also on lines with a partially
+  consumed tab (`meta.srcLinePads`). In 14.1.3 it was a base that could lie
+  in the previous line or before the source (`>\t\tfoo` gave `[-1]`). The
+  mapping of characters on those lines changes accordingly, see the
+  `zwspIndent` option; other lines are unchanged.
+
+
+## [14.1.3] - 2026-10-21
 ### Added
 - `zwspIndent` option (`true` by default, the output of earlier versions):
   `false` keeps the content of fenced and indented code blocks without the
@@ -35,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `parse` and `parseInline` default `env` to `{}`, as `render` does.
 - `StateBlock#getLines` records the line offsets of the lines it returns,
   overwriting those of earlier calls.
+- Adjacent `text` tokens are joined only when each one's `content` length
+  equals its `size` and they are contiguous in the source, so text tokens
+  pushed by plugins without a matching `size` are no longer joined.
+- `utils.getLineOffset(state, line)` takes an optional line
+  (`state.currentLine` by default) and applies in every container, not only
+  in blockquotes and alerts. It returns 0 in nested inline parses whose
+  source is not the content of the parent token.
+- `StateInline#currentLine` is derived from `pos` by the inline parser
+  (`syncCurrentLine`) instead of being counted by the `newline` rule. New
+  `StateInline#startLine`, `lineAt(pos)` and `syncCurrentLine()`.
 
 ### Fixed
 - Positions of inline tokens in containers (blockquotes, lists), after lines
@@ -44,6 +64,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Line offsets lost for the whole document when a block rule parses a nested
   document with the same `env`.
 - Quadratic time of line offset lookups in nested containers.
+
+
+## [14.1.2] - 2026-09-15
+### Fixed
+- Missing `position` and `size` of `text` tokens in linkified URLs.
+
+
+## [14.1.1] - 2025-08-28
+### Fixed
+- `position` and `size` of text joined with escapes and other `text_special`
+  tokens; the `size` of an escape covers its backslash.
+- `StateBlock#getLines` with `keepLastLF` ends the last line with a newline
+  even when the source does not.
 
 
 ## [14.1.0] - 2024-03-19

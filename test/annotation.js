@@ -349,9 +349,27 @@ describe('Annotation', function () {
     const zwsp = token.meta.indentZwsp ? token.meta.indentZwsp[k] : 0
     const pad = token.meta.srcLinePads ? token.meta.srcLinePads[k] : 0
     const start = token.meta.srcLineStarts[k]
-    if (c < zwsp) { return start + pad + c }
-    if (c < zwsp + pad) { return start + zwsp + pad - 1 }
-    return start + c
+    const textStart = pad > 0 && zwsp === 0 ? start + 1 : start + zwsp
+    if (c < zwsp) { return start + c }
+    if (c < zwsp + pad) { return textStart - 1 }
+    return textStart + c - zwsp - pad
+  }
+
+  // `srcLineStarts[k]` is where line `k` starts in the source: its first
+  // character maps there, and it lies in the source line of the line text.
+  function assertRealLineStarts (src, token, label) {
+    const starts = token.meta.srcLineStarts
+    token.content.split('\n').slice(0, starts.length).forEach(function (line, k) {
+      const where = label + ' line ' + k
+      const start = starts[k]
+      assert.isAtLeast(start, 0, where)
+      if (k > 0) { assert.isAbove(start, starts[k - 1], where + ': increasing') }
+      if (line.length > 0) {
+        assert.strictEqual(codeSourceOffset(token, k, 0), start, where + ': first character')
+        const last = codeSourceOffset(token, k, line.length - 1)
+        assert.notInclude(src.slice(start, last + 1), '\n', where + ': same source line')
+      }
+    })
   }
 
   // Checks every character of a code token against the source: U+200B stand
@@ -363,7 +381,7 @@ describe('Annotation', function () {
       const zwsp = zwspCounts ? zwspCounts[k] : 0
       const pad = pads ? pads[k] : 0
       // the U+200B stand for the `zwsp` source characters right before the line text
-      const textStart = token.meta.srcLineStarts[k] + zwsp + pad
+      const textStart = codeSourceOffset(token, k, zwsp + pad)
       for (let c = 0; c < line.length; c++) {
         const at = codeSourceOffset(token, k, c)
         const where = label + ' line ' + k + ' col ' + c
@@ -379,6 +397,7 @@ describe('Annotation', function () {
         }
       }
     })
+    assertRealLineStarts(src, token, label)
   }
 
   it('should keep the code content of earlier versions by default', function () {
@@ -552,8 +571,29 @@ describe('Annotation', function () {
       const pad = token.meta.srcLinePads[0]
       assert.strictEqual(pad, 2)
       assert.strictEqual(token.content.slice(zwsp), '  foo\n')
-      // the text after the padding maps to the source as usual
-      assert.strictEqual(token.meta.srcLineStarts[0] + zwsp + pad, src.indexOf('foo'))
+      // the line starts at the stripped indent (U+200B) or at the tab (padding)
+      const tab = src.indexOf('\t\tfoo') + 1
+      assert.strictEqual(token.meta.srcLineStarts[0], zwspIndent ? src.indexOf('  \t\tfoo') : tab)
+      assert.strictEqual(codeSourceOffset(token, 0, zwsp), tab)
+      assert.strictEqual(codeSourceOffset(token, 0, zwsp + pad), src.indexOf('foo'))
+    })
+  })
+
+  it('should start code lines with a partially consumed tab in their own source line', function () {
+    [
+      // used to be [-1] and [1]: before the source, and on the `>`
+      ['>\t\tfoo\n', 1, 2],
+      // used to be [9] and [10]: in the line of the opening fence
+      ['- a\n\n  ```\n\tfoo\n  ```\n', 11, 11],
+      // used to end in the newline of the previous code line
+      ['- a\n\n  ```\n  x\n\tfoo\n  ```\n', 15, 15]
+    ].forEach(function ([src, withZwsp, withoutZwsp]) {
+      [[true, withZwsp], [false, withoutZwsp]].forEach(function ([zwspIndent, expected]) {
+        const token = findCode(require('../')({ zwspIndent }).parse(src, {}))
+        const starts = token.meta.srcLineStarts
+        assert.strictEqual(starts[starts.length - 1], expected, JSON.stringify(src) + ' zwspIndent: ' + zwspIndent)
+        assertCodeMapsToSource(src, token, JSON.stringify(src))
+      })
     })
   })
 
