@@ -673,4 +673,115 @@ describe('Annotation', function () {
       })
     }
   })
+
+  // `paragraph_close.position` is the source position right after the last
+  // character of the paragraph content, in the source line of that character.
+  function assertParagraphCloses (src, tokens, message) {
+    let count = 0
+    tokens.forEach(function (token, i) {
+      if (token.type !== 'paragraph_close') return
+      const inline = tokens[i - 1]
+      assert.strictEqual(inline.type, 'inline', message)
+      const content = inline.content
+      if (content.length === 0) return
+      count++
+      const close = token.position
+      const last = content[content.length - 1]
+      assert.strictEqual(src[close - 1], last, message + ' close ' + close)
+      assert.isTrue(src.slice(inline.position, close).endsWith(last), message)
+      // the source line of the last character of the content
+      const line = inline.map[0] + content.split('\n').length - 1
+      assert.strictEqual(src.slice(0, close - 1).split('\n').length - 1, line, message + ' line')
+    })
+    return count
+  }
+
+  it('should end paragraph_close after the content of multi-line paragraphs in containers', function () {
+    const md = require('../')()
+    const cases = [
+      ['> a\n> b *c* d\n> e', 17],
+      ['> > a\n> > b\n> > c', 17],
+      ['> a\nb lazy\n> c', 14],
+      ['- > a\n  > b', 11],
+      ['> [!NOTE]\n> b *c* d\n> e', 23]
+    ]
+    cases.forEach(function (c) {
+      const tokens = md.parse(c[0], {})
+      const close = tokens.find(function (t) { return t.type === 'paragraph_close' })
+      assert.strictEqual(close.position, c[1], JSON.stringify(c[0]))
+      assertParagraphCloses(c[0], tokens, JSON.stringify(c[0]))
+    })
+  })
+
+  it('should keep the inline size of paragraphs and setext headings as the content length', function () {
+    // hackmd-production computes GitHub alert titles in content coordinates
+    // from the inline position and size
+    const md = require('../')()
+    ;['> [!NOTE]\n> b *c* d\n> e', '> a\n> b\n> ---'].forEach(function (src) {
+      const inline = md.parse(src, {}).find(function (t) { return t.type === 'inline' })
+      assert.strictEqual(inline.size, inline.content.length, JSON.stringify(src))
+    })
+  })
+
+  it('should end paragraph_close after the last content character, not trimmed whitespace', function () {
+    const md = require('../')()
+    const cases = [
+      // nested blockquotes, also with lazy lines
+      ['> > a\n> > b *c*\n> > d\n', 21],
+      ['> > a\n> b\nc\n', 11],
+      ['> > > a\n> > > b\n', 15],
+      // blockquotes in lists, lists in blockquotes
+      ['- > a\n  > b\n  > c\n', 17],
+      ['1. > a\n   > b\n', 13],
+      ['> - a\n>   b\n>   c\n', 17],
+      ['-\n  > b\n  > c\n', 13],
+      // lazy continuation lines
+      ['> a\nb\nc\n', 7],
+      ['> a\n    b\n> c\n', 13],
+      // trailing whitespace on the last line and on whole trailing lines
+      ['> a\n> b   \n', 7],
+      ['> a\n> b  \n> \u00a0\n', 7],
+      ['> a\n> b\n> \u00a0 \u00a0\n> \u00a0\n', 7],
+      ['a\nb\u00a0\n\u00a0\n', 3],
+      // whole lines of U+00A0 at the start
+      ['> \u00a0\n> a\n> b\n', 11],
+      ['- \u00a0\n  \u00a0\n  a *b*\n  c\n', 19],
+      ['\u00a0\n\u00a0\na\nb\n', 7],
+      // tabs, also partially consumed ones
+      ['>\ta\n>\tb\n', 7],
+      ['> a\n>\t\tb\n', 8],
+      ['- a\n\tb\n', 6],
+      ['- > a\n\t> b\n', 10],
+      ['>  a\n>\t\t  b\t\n', 11]
+    ]
+    cases.forEach(function (c) {
+      const tokens = md.parse(c[0], {})
+      const close = tokens.find(function (t) { return t.type === 'paragraph_close' })
+      assert.strictEqual(close.position, c[1], JSON.stringify(c[0]))
+      assert.isAbove(assertParagraphCloses(c[0], tokens, JSON.stringify(c[0])), 0)
+    })
+  })
+
+  it('should end paragraph_close after the content of generated paragraphs', function () {
+    let seed = 7
+    function rnd (n) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return (seed >>> 16) % n
+    }
+    function pick (list) { return list[rnd(list.length)] }
+    const texts = ['a', 'b *c* d', 'e  ', 'f\t', 'g\u00a0', '\u00a0', '\u00a0 \u00a0', ' h', '\ti', '`j`', 'k\\']
+    const prefixes = ['', '> ', '>', '>\t', '> > ', '- ', '  ', '\t', '> - ', '>   ', '- > ', '  > ']
+    const mds = [require('../')(), require('../')({ zwspIndent: false })]
+    let checked = 0
+
+    for (let n = 0; n < 400; n++) {
+      const lines = []
+      for (let i = rnd(5) + 1; i > 0; i--) lines.push(pick(prefixes) + pick(texts))
+      const src = lines.join('\n') + pick(['', '\n'])
+      mds.forEach(function (md) {
+        checked += assertParagraphCloses(src, md.parse(src, {}), JSON.stringify(src))
+      })
+    }
+    assert.isAbove(checked, 400)
+  })
 })
