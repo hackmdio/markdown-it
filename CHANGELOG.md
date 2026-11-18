@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.2.1] - Unreleased
+### Fixed
+- `paragraph_close.position` of multi-line paragraphs in containers is the
+  source position right after the last content character. It was short by
+  the container markers dropped before later lines (`> a\n> b` gave 5
+  instead of 7). Rendered HTML is unchanged.
+
+### Documentation
+- The `size` of the `inline` token of paragraphs and setext headings is the
+  length of its `content`, not of its source (unchanged).
+
+
 ## [14.2.0] - 2026-11-18
 ### Changed
 - `meta.srcLineStarts` of `fence` and `code_block` tokens is the source offset
