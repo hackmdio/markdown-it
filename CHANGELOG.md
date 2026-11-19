@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.2.1] - Unreleased
+### Fixed
+- Positions of inline tokens whose lines a rule reads again with
+  `StateBlock#getLines` after they were pushed (e.g. a plugin probing earlier
+  lines): each call overwrote `lineOffsets` and `linePads` for its lines, and
+  inline parsing used the overwritten values. They are now saved before a
+  call overwrites them and written back before the token is parsed, so during
+  inline parsing the arrays (and `utils.getLineOffset` / `utils.getLinePad`)
+  hold the values of the token being parsed. Built-in rules never did this,
+  so positions without such plugins are unchanged. Values a rule writes
+  before a token is pushed still apply to tokens built without `getLines`
+  (tables): probe lines with `getLine`, `bMarks` and `eMarks`. Rendered HTML
+  is unchanged.
+
+
 ## [14.2.0] - 2026-11-18
 ### Changed
 - `meta.srcLineStarts` of `fence` and `code_block` tokens is the source offset
