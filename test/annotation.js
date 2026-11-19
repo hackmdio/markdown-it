@@ -674,3 +674,204 @@ describe('Annotation', function () {
     }
   })
 })
+
+describe('Annotation with rules calling getLines again', function () {
+  const fs = require('fs')
+  const path = require('path')
+  const markdownit = require('../')
+
+  // Looks back over the lines before each block, e.g. to find what it follows,
+  // and gives up: the lines belong to inline tokens pushed before.
+  function lookBack (md) {
+    md.block.ruler.before('table', 'look_back', function (state, startLine, endLine, silent) {
+      if (!silent && startLine > 0) {
+        state.getLines(Math.max(0, startLine - 3), startLine, 0, false)
+      }
+      return false
+    })
+  }
+
+  // Looks ahead over the next lines with another indent, and gives up.
+  function lookAhead (md) {
+    md.block.ruler.before('table', 'look_ahead', function (state, startLine, endLine, silent) {
+      if (!silent) state.getLines(startLine, Math.min(endLine, startLine + 3), state.blkIndent + 1, true)
+      return false
+    })
+  }
+
+  // Reads the line before each block together with the first line of the
+  // block, and gives up: the first line keeps values counted from the line before.
+  function lookAround (md) {
+    md.block.ruler.before('paragraph', 'look_around', function (state, startLine, endLine, silent) {
+      if (!silent && startLine > 0) state.getLines(startLine - 1, startLine + 1, 0, false)
+      return false
+    })
+  }
+
+  // Reads the lines of its paragraph again after pushing its tokens.
+  function reread (md) {
+    const rule = md.block.ruler.__rules__.find(function (r) { return r.name === 'paragraph' })
+    const paragraph = rule.fn
+    md.block.ruler.at('paragraph', function (state, startLine, endLine, silent) {
+      const line = state.line
+      if (!paragraph(state, startLine, endLine, silent)) return false
+      state.getLines(startLine + 1, state.line, 0, true)
+      state.getLines(line, state.line, state.blkIndent + 2, false)
+      return true
+    }, { alt: rule.alt })
+  }
+
+  // Pushes an inline token, then sets its content from `getLines` (as
+  // markdown-it-deflist does for terms): `? term` lines.
+  function term (md) {
+    md.block.ruler.before('paragraph', 'term', function (state, startLine, endLine, silent) {
+      const pos = state.bMarks[startLine] + state.tShift[startLine]
+      if (state.src.charCodeAt(pos) !== 0x3F/* ? */ || state.src.charCodeAt(pos + 1) !== 0x20) return false
+      if (silent) return true
+      state.push('term_open', 'dt', 1).map = [startLine, startLine + 1]
+      const token = state.push('inline', '', 0)
+      token.map = [startLine, startLine]
+      token.content = state.getLines(startLine, startLine + 1, state.blkIndent, false).trim()
+      token.position = pos
+      token.size = token.content.length
+      token.children = []
+      state.push('term_close', 'dt', -1)
+      state.line = startLine + 1
+      return true
+    })
+  }
+
+  // `lineOffsets` of each inline token, read from the block state during
+  // inline parsing (as plugins of hackmd-production do).
+  function recordOffsets (md, record) {
+    md.inline.ruler.before('text', 'record_offsets', function (state, silent) {
+      if (!silent) {
+        record.push(state.currentLine + ':' + state.env.state_block.lineOffsets[state.currentLine] +
+          ':' + md.utils.getLineOffset(state) + ':' + md.utils.getLinePad(state, state.currentLine))
+      }
+      return false
+    })
+  }
+
+  function positions (tokens) {
+    const out = []
+    tokens.forEach(function (token) {
+      out.push(token.type + '@' + token.position + '+' + token.size)
+      if (token.children) {
+        token.children.forEach(function (child) {
+          out.push('  ' + child.type + '@' + child.position + '+' + child.size)
+        })
+      }
+    })
+    return out
+  }
+
+  function textMapsToSource (src, tokens) {
+    tokens.forEach(function (token) {
+      if (token.type !== 'inline') return
+      token.children.forEach(function (child) {
+        if (child.type === 'text' && child.content) {
+          assert.strictEqual(src.slice(child.position, child.position + child.size), child.content, JSON.stringify(src))
+        }
+      })
+    })
+  }
+
+  const containerSources = [
+    '> a\n> b *c*\n\nnext',
+    '- a\n  b *c*\n\nnext',
+    '> > a\n> > b\n> > *c*\n\nnext',
+    '1. a\n   b\n   **c** d\n2. e\n   f *g*\n',
+    '> - a\n>   b *c*\n> - d\n>   e\n',
+    '- > a\n  > b *c*\n  > d\n',
+    '> a\n> b\n> ===\n>\n> c\n> d *e*\n',
+    '>\ta\n>\tb *c*\n\n-\ta\n\tb *c*\n',
+    '> ? a *b*\n> c\n> d *e*\n> ? f *g*\n',
+    '- ? a *b*\n  c *d*\n\n  ? e\n',
+    '> a\n>\n> ? b *c*\n> ? d\n'
+  ]
+
+  it('should keep inline positions when a rule probes lines of earlier inline tokens', function () {
+    const plain = markdownit()
+    const probed = markdownit().use(lookBack)
+    containerSources.forEach(function (src) {
+      textMapsToSource(src, probed.parse(src, {}))
+      assert.deepStrictEqual(positions(probed.parse(src, {})), positions(plain.parse(src, {})), JSON.stringify(src))
+    })
+    // the first example of DEV-3364
+    const tokens = probed.parse('> a\n> b *c*\n\nnext', {})
+    assert.deepStrictEqual(tokens[2].children.map(function (t) { return t.content + '@' + t.position }),
+      ['a@2', '@3', 'b @6', '@8', 'c@9', '@10'])
+  })
+
+  it('should keep inline positions when a rule reads its own lines again', function () {
+    const plain = markdownit()
+    const probed = markdownit().use(reread)
+    containerSources.forEach(function (src) {
+      assert.deepStrictEqual(positions(probed.parse(src, {})), positions(plain.parse(src, {})), JSON.stringify(src))
+    })
+  })
+
+  it('should keep the offsets of an inline token whose content comes from getLines after it is pushed', function () {
+    const plain = markdownit().use(term)
+    const probed = markdownit().use(lookAround).use(term).use(lookAhead).use(lookBack)
+    containerSources.forEach(function (src) {
+      textMapsToSource(src, probed.parse(src, {}))
+      assert.deepStrictEqual(positions(probed.parse(src, {})), positions(plain.parse(src, {})), JSON.stringify(src))
+    })
+  })
+
+  it('should hold the offsets of the inline token being parsed in lineOffsets', function () {
+    containerSources.forEach(function (src) {
+      const expected = []
+      const actual = []
+      markdownit().use(recordOffsets, expected).parse(src, {})
+      markdownit().use(lookBack).use(reread).use(recordOffsets, actual).parse(src, {})
+      assert.deepStrictEqual(actual, expected, JSON.stringify(src))
+    })
+  })
+
+  it('should not change positions or HTML of the fixtures when rules probe lines', function () {
+    const dir = path.join(__dirname, 'fixtures')
+    const files = []
+    fs.readdirSync(dir).forEach(function (sub) {
+      fs.readdirSync(path.join(dir, sub)).forEach(function (name) { files.push(path.join(dir, sub, name)) })
+    })
+    const options = { html: true, linkify: true, typographer: true }
+    const plain = markdownit(options).use(term)
+    const probed = markdownit(options).use(term).use(lookBack).use(reread)
+    let count = 0
+    files.forEach(function (file) {
+      const text = fs.readFileSync(file, 'utf8')
+      // whole files, and each part between `.` lines (fixture examples)
+      text.split(/^\.$/m).concat([text]).forEach(function (src) {
+        // each sample on its own, and nested in containers
+        [src, src.replace(/^/mg, '> '), src.replace(/^/mg, '  ').replace(/^ {2}/, '- ')].forEach(function (sample) {
+          const plainTokens = plain.parse(sample, {})
+          const probedTokens = probed.parse(sample, {})
+          assert.deepStrictEqual(positions(probedTokens), positions(plainTokens), JSON.stringify(sample.slice(0, 200)))
+          assert.strictEqual(probed.renderer.render(probedTokens, probed.options, {}),
+            plain.renderer.render(plainTokens, plain.options, {}))
+          count++
+        })
+      })
+    })
+    assert.isAbove(count, 3000)
+  })
+
+  // Not covered: values written before a token is pushed. A rule that builds
+  // inline tokens without calling getLines (tables) maps them through what
+  // the arrays hold for their lines, e.g. the values of a rule that probed
+  // them before. Probe with getLine, bMarks and eMarks instead.
+  it('should still map table cells through values written by probes before the table (documented trap)', function () {
+    const src = '> a\n>\n> | h | i |\n> |---|---|\n> | x | y |\n'
+    function cells (md) {
+      return md.parse(src, {}).filter(function (t) { return t.type === 'inline' }).slice(1).map(function (t) {
+        const text = t.children[0]
+        return src.slice(text.position, text.position + text.size)
+      })
+    }
+    assert.deepStrictEqual(cells(markdownit()), ['h', 'i', 'x', 'y'])
+    assert.notDeepEqual(cells(markdownit().use(lookAhead)), ['h', 'i', 'x', 'y'])
+  })
+})
