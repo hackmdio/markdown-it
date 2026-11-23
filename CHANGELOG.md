@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.2.1] - Unreleased
+### Fixed
+- Positions of table cells (`th_open`/`td_open`, `inline`, `th_close`/`td_close`)
+  in rows without a leading or trailing `|`. Without a leading `|`, every
+  cell was one character too far right (`a | b` put the second `th_open` on
+  the space after `|`); the first open token now sits at the start of its
+  cell with `size` 0. Without a trailing `|`, the last close token had
+  `size` 1 and covered the newline; it now sits at the end of the cell with
+  `size` 0. Autocompleted cells (missing from a row) sit at the end of the
+  line with `size` 0 instead of past it. Unicode whitespace before a row
+  (e.g. U+00A0, removed by `trim()` but not counted by `tShift`) no longer
+  moves its cells to the left. Header `inline` tokens have
+  `map` set to the header line instead of the delimiter line. Rendered HTML
+  is unchanged.
+
+
 ## [14.2.0] - 2026-11-18
 ### Changed
 - `meta.srcLineStarts` of `fence` and `code_block` tokens is the source offset
