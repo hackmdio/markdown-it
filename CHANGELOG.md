@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shifted only `position` (`` > ```\n> code\n> ``` `` with an offset of 18 gave
   `[8]` instead of `[26]`). Without an offset, nothing changes.
 
+### Documentation
+- A custom core `block` rule must store the return value of
+  `md.block.parse` as `state.blockState`, as the built-in rule does:
+  `utils.getLineOffset` and `utils.getLinePad` read the line offsets from
+  it. Without it (e.g. a rule written for upstream markdown-it) they return
+  0 without an error, and inline positions after the first line of a
+  container are off (`em_open` of `> a\n> b *c*` at 6 instead of 8).
+  Behavior is unchanged.
+
 
 ## [14.2.0] - 2026-11-18
 ### Changed
