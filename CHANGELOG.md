@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0 without an error, and inline positions after the first line of a
   container are off (`em_open` of `> a\n> b *c*` at 6 instead of 8).
   Behavior is unchanged.
+- `zwspIndent`: the U+200B prepended to a code line stand for every source
+  character stripped before the line text within its container, not only
+  the indent. On the first line of a list item that starts with an indented
+  code block, they include the list marker and the spaces after it, for
+  each list item opened on that line: `-\t  s` and `-     s` give 4 and 6
+  U+200B, the first one standing for `-`. Blockquote markers (`>`) are
+  never included. The 14.1.3 and 14.2.0 notes said container markers were
+  not included. The number of U+200B, `meta.srcLineStarts` and the mapping
+  rule are unchanged.
 
 
 ## [14.2.0] - 2026-11-18

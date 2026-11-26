@@ -666,6 +666,44 @@ describe('Annotation', function () {
     assert.strictEqual(codeSourceOffset(token, 0, 3), tab + 1)
   })
 
+  it('should map U+200B on the first line of a list item to its list marker', function () {
+    const clean = require('../')({ zwspIndent: false })
+    // [source, source characters the U+200B stand for, srcLineStarts with
+    // zwspIndent, without]: the list marker is included on the first line of
+    // a list item starting with an indented code block, a blockquote marker is not
+    ;[
+      ['-\t  s', '-\t  ', 0, 4],
+      ['-     s', '-     ', 0, 6],
+      ['1)\t\ts', '1)\t\t', 0, 3], // the second tab is partially consumed
+      ['- -     s', '- -     ', 0, 8], // both list markers
+      ['> -     s', '-     ', 2, 8],
+      ['- >     s', '    ', 4, 8]
+    ].forEach(function (c) {
+      const src = c[0]
+      const label = JSON.stringify(src)
+      const token = findCode(md.parse(src, {}))
+      assert.strictEqual(token.type, 'code_block', label)
+      assert.deepStrictEqual(token.meta.indentZwsp, [c[1].length], label)
+      assert.deepStrictEqual(token.meta.srcLineStarts, [c[2]], label)
+      const line = token.content.split('\n')[0]
+      let stood = ''
+      for (let k = 0; k < line.length; k++) {
+        const at = codeSourceOffset(token, 0, k)
+        if (k < c[1].length) {
+          assert.strictEqual(line[k], '\u200B', label)
+          stood += src[at]
+        } else if (line[k] !== ' ' || src[at] !== '\t') {
+          assert.strictEqual(src[at], line[k], label + ' col ' + k)
+        }
+      }
+      assert.strictEqual(stood, c[1], label)
+      assertRealLineStarts(src, token, label)
+      const cleanToken = findCode(clean.parse(src, {}))
+      assert.deepStrictEqual(cleanToken.meta.srcLineStarts, [c[3]], label)
+      assertCodeMapsToSource(src, cleanToken, label)
+    })
+  })
+
   it('should map every character of generated code blocks to the source', function () {
     let seed = 42
     function rnd (n) {
