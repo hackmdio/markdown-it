@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.2.1] - Unreleased
+### Fixed
+- The `positionOffset` of the core `inline` rule (e.g.
+  `md.core.ruler.at('inline', state => inline(state, 18))` to account for a
+  stripped front matter) also shifts `meta.srcLineStarts` of `fence` and
+  `code_block` tokens, which are absolute offsets like `token.position`. It
+  shifted only `position` (`` > ```\n> code\n> ``` `` with an offset of 18 gave
+  `[8]` instead of `[26]`). Without an offset, nothing changes.
+
+
 ## [14.2.0] - 2026-11-18
 ### Changed
 - `meta.srcLineStarts` of `fence` and `code_block` tokens is the source offset

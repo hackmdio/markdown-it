@@ -620,6 +620,38 @@ describe('Annotation', function () {
     })
   })
 
+  it('should shift srcLineStarts with the positionOffset of the core inline rule', function () {
+    function withOffset (offset) {
+      const md2 = require('../')()
+      const inline = md2.core.ruler.__rules__[md2.core.ruler.__find__('inline')].fn
+      md2.core.ruler.at('inline', function (state) { return inline(state, offset) })
+      return md2
+    }
+    const plain = require('../')()
+    const sources = [
+      '> ```\n> code\n> ```', // DEV-3267: [8] instead of [26] with an offset of 18
+      '```\na\nb\n```\n',
+      '>     a\n>     b\n',
+      '- a\n\n\t\tb\n'
+    ]
+    const front = '---\ntitle: x\n---\n\n' // 18 characters, as in DEV-3267
+    sources.forEach(function (src) {
+      const expected = findCode(plain.parse(src, {}))
+      ;[undefined, 0, front.length].forEach(function (offset) {
+        const token = findCode(withOffset(offset).parse(src, {}))
+        const shift = offset || 0
+        assert.strictEqual(token.position, expected.position + shift, JSON.stringify(src))
+        assert.deepStrictEqual(token.meta.srcLineStarts,
+          expected.meta.srcLineStarts.map(function (s) { return s + shift }), JSON.stringify(src))
+        assert.deepStrictEqual(token.meta.indentZwsp, expected.meta.indentZwsp)
+        assert.deepStrictEqual(token.meta.srcLinePads, expected.meta.srcLinePads)
+        // shifted offsets map to the source with the front matter put back
+        if (offset) assertCodeMapsToSource(front + src, token, JSON.stringify(src))
+      })
+    })
+    assert.deepStrictEqual(findCode(withOffset(18).parse(sources[0], {})).meta.srcLineStarts, [26])
+  })
+
   it('should map U+200B on a line with a partially consumed tab to the stripped indent', function () {
     const src = '- a\n\n  ```\n\tfoo\n  ```\n'
     const token = findCode(require('../')().parse(src, {}))
