@@ -86,6 +86,104 @@ describe('Annotation', function () {
     assert.strictEqual(tokens[4].size, 9)
   })
 
+  function fenceToken (src) {
+    const fences = md.parse(src, {}).filter(t => t.type === 'fence')
+    assert.strictEqual(fences.length, 1, JSON.stringify(src))
+    return fences[0]
+  }
+
+  it('should annotate unclosed fences up to the end of their last line', function () {
+    // [src, position, covered source]
+    const cases = [
+      // DEV-3424 examples
+      ['```\nx\ny', 0, '```\nx\ny'],
+      ['> ```\n> x\n> y', 2, '```\n> x\n> y'],
+      ['- ```\n  x\n  y', 2, '```\n  x\n  y'],
+      ['> ```\n> x\n\ny', 2, '```\n> x'], // closed by the end of the blockquote
+      ['- ```\n  x\ny', 2, '```\n  x'], // closed by a line with less indent
+      ['```\nx\n``` y', 0, '```\nx\n``` y'], // not a valid closing marker
+      // only the opening line
+      ['```', 0, '```'],
+      ['```\n', 0, '```'],
+      ['```js', 0, '```js'],
+      ['```js\n', 0, '```js'],
+      // other cases
+      ['~~~\nx\ny', 0, '~~~\nx\ny'],
+      ['```\nx\ny\n', 0, '```\nx\ny'],
+      ['`````\nx\n```', 0, '`````\nx\n```'], // closing marker too short
+      ['> ```\n> x\n>\n> y\n\nz', 2, '```\n> x\n>\n> y'],
+      ['- ```\n  x\n- b', 2, '```\n  x'], // closed by the next list item
+      // trailing blank lines are in `map`, so the fence ends where the last
+      // one starts
+      ['```\nx\ny\n\n', 0, '```\nx\ny\n'],
+      ['```\n\n', 0, '```\n']
+    ]
+
+    for (const [src, position, covered] of cases) {
+      const token = fenceToken(src)
+      assert.strictEqual(token.position, position, JSON.stringify(src))
+      assertTokenContent(src, token, covered)
+    }
+  })
+
+  it('should keep the positions of closed fences', function () {
+    // [src, position, size]
+    const cases = [
+      ['```\nx\n```\n', 0, 9],
+      ['~~~\nx\n~~~', 0, 9],
+      ['```js\nx\n```  \n\nz', 0, 13],
+      ['> ```\n> x\n> ```', 2, 13],
+      ['- ```\n  x\n  ```\n- b', 2, 13],
+      ['```\nx\n`````', 0, 11]
+    ]
+
+    for (const [src, position, size] of cases) {
+      const token = fenceToken(src)
+      assert.strictEqual(token.position, position, JSON.stringify(src))
+      assert.strictEqual(token.size, size, JSON.stringify(src))
+    }
+  })
+
+  it('should end every fence at the end of the last line in its map', function () {
+    const wrappers = [
+      s => s,
+      s => s.replace(/^/gm, '> '),
+      s => '- ' + s.replace(/\n/g, '\n  '),
+      s => '1. ' + s.replace(/\n/g, '\n   '),
+      s => '> - ' + s.replace(/\n/g, '\n>   ')
+    ]
+    const bodies = [
+      '```\nx\ny',
+      '~~~ info\na\n\nb\n',
+      '```\nx\n``` y\nz',
+      '````\nx\n```\n',
+      '```\nx\n\n\n',
+      // closed fences already end at the end of their closing line
+      '```\nx\n```'
+    ]
+    const tails = ['', '\n', '\n\nafter', '\nafter']
+    let checked = 0
+
+    for (const wrap of wrappers) {
+      for (const body of bodies) {
+        for (const tail of tails) {
+          const src = wrap(body) + tail
+          const tokens = md.parse(src, {})
+          for (const token of tokens) {
+            if (token.type !== 'fence') continue
+            const lines = src.split('\n')
+            const last = token.map[1] - 1
+            const lineEnd = lines.slice(0, last + 1).join('\n').length
+            assert.strictEqual(token.position + token.size, lineEnd, JSON.stringify(src))
+            checked++
+          }
+        }
+      }
+    }
+
+    assert.isAbove(checked, 50)
+  })
+
   it('should annotate tables', function () {
     const src = 'Test:\n\n' +
               ' | Type | Message |\n' +

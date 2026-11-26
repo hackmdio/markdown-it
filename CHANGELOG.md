@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.2.1] - Unreleased
+### Fixed
+- The `size` of a `fence` token without a closing marker (closed by the end
+  of the document or of its container) ends at the end of the last line in
+  its `map`, without the newline, like a closed fence. It used to end
+  wherever the closing marker search stopped: short of the last line
+  (`` ```\nx\ny `` gave 6 instead of 7) or past its newline. `position`,
+  `content`, `map`, `meta` and rendered HTML are unchanged.
+
+
 ## [14.2.0] - 2026-11-18
 ### Changed
 - `meta.srcLineStarts` of `fence` and `code_block` tokens is the source offset
