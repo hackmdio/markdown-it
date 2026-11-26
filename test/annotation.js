@@ -132,7 +132,9 @@ describe('Annotation', function () {
     assertTokenContent(src, tokens[18], '')
     assertTokenContent(src, tokens[19], '|')
     assertTokenContent(src, tokens[20], 'World')
-    assertTokenContent(src, tokens[21], '\n')
+    // no trailing `|`: the close token sits at the end of the cell
+    assert.strictEqual(tokens[21].position, src.indexOf('World') + 5)
+    assertTokenContent(src, tokens[21], '')
 
     assertTokenContent(src, tokens[24], '|')
     assertTokenContent(src, tokens[25], 'Bonjour')
@@ -267,6 +269,207 @@ describe('Annotation', function () {
     const src = '| a \\| b | c |\n| - | - |\n| d | e |'
     const cell = md.parse(src, {}).find(function (t) { return t.type === 'inline' && t.content === 'c' })
     assertTokenContent(src, cell, 'c')
+  })
+
+  // One string per cell of each row: 'open position/size inline position
+  // close position/size L<inline map[0]>'
+  function tableCells (src) {
+    const rows = []
+    let row
+    const tokens = md.parse(src, {})
+    tokens.forEach(function (t, i) {
+      if (t.type === 'tr_open') { row = []; rows.push(row) }
+      if (t.type === 'th_open' || t.type === 'td_open') {
+        const inline = tokens[i + 1]
+        const close = tokens[i + 2]
+        assert.strictEqual(inline.size, inline.content.length)
+        assert.strictEqual(inline.map[1], inline.map[0] + 1)
+        row.push(t.position + '/' + t.size + ' ' + inline.position + ' ' +
+          close.position + '/' + close.size + ' L' + inline.map[0])
+      }
+    })
+    return rows
+  }
+
+  it('should annotate table cells of rows without a leading or trailing pipe', function () {
+    // no leading `|`: the first open token sits at the start of the cell (size 0);
+    // no trailing `|`: the last close token sits at the end of the cell (size 0)
+    assert.deepStrictEqual(tableCells('a | b\n--|--\nc | d\n'), [
+      ['0/0 0 2/0 L0', '2/1 4 5/0 L0'],
+      ['12/0 12 14/0 L2', '14/1 16 17/0 L2']
+    ])
+    assert.deepStrictEqual(tableCells('e | f |\n--|--|\ng | h |\n'), [
+      ['0/0 0 2/0 L0', '2/1 4 6/1 L0'],
+      ['15/0 15 17/0 L2', '17/1 19 21/1 L2']
+    ])
+    assert.deepStrictEqual(tableCells('| i | j\n|---|---\n| k | l\n'), [
+      ['0/1 2 4/0 L0', '4/1 6 7/0 L0'],
+      ['17/1 19 21/0 L2', '21/1 23 24/0 L2']
+    ])
+    // a body row without a leading `|` between rows with one
+    assert.deepStrictEqual(tableCells('| m | n |\n|---|---|\no | p |\n| q | r |\n'), [
+      ['0/1 2 4/0 L0', '4/1 6 8/1 L0'],
+      ['20/0 20 22/0 L2', '22/1 24 26/1 L2'],
+      ['28/1 30 32/0 L3', '32/1 34 36/1 L3']
+    ])
+    assert.deepStrictEqual(tableCells('  w | x\n  --|--\n  y | z\n'), [
+      ['2/0 2 4/0 L0', '4/1 6 7/0 L0'],
+      ['18/0 18 20/0 L2', '20/1 22 23/0 L2']
+    ])
+    assert.deepStrictEqual(tableCells('> A | B\n> --|--\n> C | D\n'), [
+      ['2/0 2 4/0 L0', '4/1 6 7/0 L0'],
+      ['18/0 18 20/0 L2', '20/1 22 23/0 L2']
+    ])
+    // control: leading and trailing `|`
+    assert.deepStrictEqual(tableCells('| E | F |\n|---|---|\n| G | H |\n'), [
+      ['0/1 2 4/0 L0', '4/1 6 8/1 L0'],
+      ['20/1 22 24/0 L2', '24/1 26 28/1 L2']
+    ])
+  })
+
+  it('should annotate autocompleted table cells at the end of the line', function () {
+    // the last real cell keeps the trailing `|`
+    assert.deepStrictEqual(tableCells('| s | t | u |\n|---|---|---|\n| v |\n'), [
+      ['0/1 2 4/0 L0', '4/1 6 8/0 L0', '8/1 10 12/1 L0'],
+      ['28/1 30 32/1 L2', '33/0 33 33/0 L2', '33/0 33 33/0 L2']
+    ])
+    // trailing spaces after the `|`
+    assert.deepStrictEqual(tableCells('a | b  \n--|-- \nc |  \n'), [
+      ['0/0 0 2/0 L0', '2/1 4 5/0 L0'],
+      ['15/0 15 17/1 L2', '20/0 20 20/0 L2']
+    ])
+  })
+
+  it('should annotate table cells in edge cases', function () {
+    // one column
+    assert.deepStrictEqual(tableCells('| a\n|--\n| b\n'), [['0/1 2 3/0 L0'], ['8/1 10 11/0 L2']])
+    assert.deepStrictEqual(tableCells('a |\n--|\nb |\n'), [['0/0 0 2/1 L0'], ['8/0 8 10/1 L2']])
+    // empty cells, and a row with only a `|`
+    assert.deepStrictEqual(tableCells('| | b |\n|-|-|\na ||\n|\n'), [
+      ['0/1 2 2/0 L0', '2/1 4 6/1 L0'],
+      ['14/0 14 16/0 L2', '16/1 17 17/1 L2'],
+      ['20/0 20 20/0 L3', '20/0 20 20/0 L3']
+    ])
+    // tab indentation in a list item
+    assert.deepStrictEqual(tableCells('- x\n\n\ta | b\n\t--|--\n\tc | d\n'), [
+      ['6/0 6 8/0 L2', '8/1 10 11/0 L2'],
+      ['20/0 20 22/0 L4', '22/1 24 25/0 L4']
+    ])
+    // lists
+    assert.deepStrictEqual(tableCells('- x\n\n  a | b\n  --|--\n  c\n'), [
+      ['7/0 7 9/0 L2', '9/1 11 12/0 L2'],
+      ['23/0 23 24/0 L4', '24/0 24 24/0 L4']
+    ])
+    assert.deepStrictEqual(tableCells('> - x\n>\n>   a | b |\n>   --|--|\n>   c\n'), [
+      ['12/0 12 14/0 L2', '14/1 16 18/1 L2'],
+      ['35/0 35 36/0 L4', '36/0 36 36/0 L4']
+    ])
+    // header without a leading `|`, body with one
+    assert.deepStrictEqual(tableCells('a | b\n--|--\n| c | d |\n'), [
+      ['0/0 0 2/0 L0', '2/1 4 5/0 L0'],
+      ['12/1 14 16/0 L2', '16/1 18 20/1 L2']
+    ])
+    // escaped pipes, also at the end of a row
+    assert.deepStrictEqual(tableCells('a \\| x | b\n--|--\nc | d \\|\n'), [
+      ['0/0 0 7/0 L0', '7/1 9 10/0 L0'],
+      ['17/0 17 19/0 L2', '19/1 21 25/0 L2']
+    ])
+    // Unicode whitespace before the row, removed by trim() but not by tShift
+    assert.deepStrictEqual(tableCells('\u00a0| a | b |\n|---|---|\n\u00a0c | d\n'), [
+      ['1/1 3 5/0 L0', '5/1 7 9/1 L0'],
+      ['22/0 22 24/0 L2', '24/1 26 27/0 L2']
+    ])
+  })
+
+  it('should keep every table cell within its row', function () {
+    let seed = 7
+    function rnd (n) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return (seed >>> 16) % n
+    }
+    function pick (list) { return list[rnd(list.length)] }
+    const words = ['a', 'bb', '*c*', '`d`', 'e\\|f', '**g** h', '[i](j)', '&amp;', '']
+    // `head` opens the container before the table (a list item needs other
+    // content first, or its first line is read as a top-level table row)
+    const containers = [
+      { head: '', rest: '' }, { head: '', rest: '  ' }, { head: '', rest: '> ' },
+      { head: '- x\n\n', rest: '  ' }, { head: '1. x\n\n', rest: '   ' }, { head: '> - x\n>\n', rest: '>   ' }
+    ]
+    let rowCount = 0
+
+    for (let n = 0; n < 500; n++) {
+      const columnCount = rnd(4) + 1
+      const container = pick(containers)
+      let src = (rnd(3) === 0 ? 'p\n\n' : '') + container.head
+      const rows = []
+
+      // Adds a row of `count` cells, and records where the text of each cell
+      // starts in the source (its end for an empty cell)
+      function addRow (count, delimiter) {
+        let lead = rnd(2) === 0
+        let trail = rnd(2) === 0
+        const cells = []
+        for (let c = 0; c < count; c++) {
+          if (delimiter) {
+            cells.push({ before: '', word: pick(['---', ':--', '--:', ':-:']), after: '' })
+          } else {
+            cells.push({ before: ' '.repeat(rnd(3)), word: pick(words), after: ' '.repeat(rnd(3)) })
+          }
+        }
+        // without a `|`, an empty first or last cell would be trimmed away
+        if (!cells[0].word) lead = true
+        if (!cells[count - 1].word) trail = true
+        if (count === 1 && !lead && !trail) lead = true
+        // spaces before the first cell would indent the row (as code past 3)
+        if (!lead) cells[0].before = ''
+
+        let line = container.rest + (!delimiter && rnd(8) === 0 ? ' ' : '') + (lead ? '|' : '')
+        const starts = []
+        cells.forEach(function (cell, c) {
+          if (c > 0) line += '|'
+          const start = src.length + line.length
+          starts.push(cell.word ? start + cell.before.length : start + cell.before.length + cell.after.length)
+          line += cell.before + cell.word + cell.after
+        })
+        if (trail) line += '|'
+        line += ' '.repeat(rnd(2))
+        rows.push({ line: src.split('\n').length - 1, start: src.length, end: src.length + line.length, starts })
+        src += line + '\n'
+      }
+
+      addRow(columnCount)
+      addRow(columnCount, true)
+      for (let b = rnd(4); b > 0; b--) addRow(rnd(columnCount) + 1)
+      rows.splice(1, 1)
+
+      const tokens = md.parse(src, {})
+      const tableRows = []
+      tokens.forEach(function (t, i) {
+        if (t.type === 'tr_open') tableRows.push([])
+        if (t.type === 'th_open' || t.type === 'td_open') tableRows[tableRows.length - 1].push(tokens.slice(i, i + 3))
+      })
+      assert.strictEqual(tableRows.length, rows.length, JSON.stringify(src))
+
+      tableRows.forEach(function (cells, r) {
+        const row = rows[r]
+        rowCount++
+        cells.forEach(function (cell, c) {
+          const where = JSON.stringify(src) + ' row ' + r + ' cell ' + c
+          const inline = cell[1]
+          // the first character of the trimmed cell, or the end of the line
+          // for an autocompleted cell
+          assert.strictEqual(inline.position, c < row.starts.length ? row.starts[c] : row.end, where)
+          if (inline.content) assert.strictEqual(src[inline.position], inline.content[0], where)
+          assert.deepStrictEqual(inline.map, [row.line, row.line + 1], where)
+          cell.forEach(function (t) {
+            assert.isAtLeast(t.position, row.start, where)
+            assert.isAtMost(t.position + t.size, row.end, where)
+            if (t.type !== 'inline' && t.size === 1) assert.strictEqual(src[t.position], '|', where)
+          })
+        })
+      })
+    }
+    assert.isAbove(rowCount, 1000)
   })
 
   it('should not use line offsets from another document', function () {
