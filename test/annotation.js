@@ -620,6 +620,38 @@ describe('Annotation', function () {
     })
   })
 
+  it('should shift srcLineStarts with the positionOffset of the core inline rule', function () {
+    function withOffset (offset) {
+      const md2 = require('../')()
+      const inline = md2.core.ruler.__rules__[md2.core.ruler.__find__('inline')].fn
+      md2.core.ruler.at('inline', function (state) { return inline(state, offset) })
+      return md2
+    }
+    const plain = require('../')()
+    const sources = [
+      '> ```\n> code\n> ```', // DEV-3267: [8] instead of [26] with an offset of 18
+      '```\na\nb\n```\n',
+      '>     a\n>     b\n',
+      '- a\n\n\t\tb\n'
+    ]
+    const front = '---\ntitle: x\n---\n\n' // 18 characters, as in DEV-3267
+    sources.forEach(function (src) {
+      const expected = findCode(plain.parse(src, {}))
+      ;[undefined, 0, front.length].forEach(function (offset) {
+        const token = findCode(withOffset(offset).parse(src, {}))
+        const shift = offset || 0
+        assert.strictEqual(token.position, expected.position + shift, JSON.stringify(src))
+        assert.deepStrictEqual(token.meta.srcLineStarts,
+          expected.meta.srcLineStarts.map(function (s) { return s + shift }), JSON.stringify(src))
+        assert.deepStrictEqual(token.meta.indentZwsp, expected.meta.indentZwsp)
+        assert.deepStrictEqual(token.meta.srcLinePads, expected.meta.srcLinePads)
+        // shifted offsets map to the source with the front matter put back
+        if (offset) assertCodeMapsToSource(front + src, token, JSON.stringify(src))
+      })
+    })
+    assert.deepStrictEqual(findCode(withOffset(18).parse(sources[0], {})).meta.srcLineStarts, [26])
+  })
+
   it('should map U+200B on a line with a partially consumed tab to the stripped indent', function () {
     const src = '- a\n\n  ```\n\tfoo\n  ```\n'
     const token = findCode(require('../')().parse(src, {}))
@@ -632,6 +664,44 @@ describe('Annotation', function () {
     assert.strictEqual(codeSourceOffset(token, 0, 1), tab)
     assert.strictEqual(codeSourceOffset(token, 0, 2), tab)
     assert.strictEqual(codeSourceOffset(token, 0, 3), tab + 1)
+  })
+
+  it('should map U+200B on the first line of a list item to its list marker', function () {
+    const clean = require('../')({ zwspIndent: false })
+    // [source, source characters the U+200B stand for, srcLineStarts with
+    // zwspIndent, without]: the list marker is included on the first line of
+    // a list item starting with an indented code block, a blockquote marker is not
+    ;[
+      ['-\t  s', '-\t  ', 0, 4],
+      ['-     s', '-     ', 0, 6],
+      ['1)\t\ts', '1)\t\t', 0, 3], // the second tab is partially consumed
+      ['- -     s', '- -     ', 0, 8], // both list markers
+      ['> -     s', '-     ', 2, 8],
+      ['- >     s', '    ', 4, 8]
+    ].forEach(function (c) {
+      const src = c[0]
+      const label = JSON.stringify(src)
+      const token = findCode(md.parse(src, {}))
+      assert.strictEqual(token.type, 'code_block', label)
+      assert.deepStrictEqual(token.meta.indentZwsp, [c[1].length], label)
+      assert.deepStrictEqual(token.meta.srcLineStarts, [c[2]], label)
+      const line = token.content.split('\n')[0]
+      let stood = ''
+      for (let k = 0; k < line.length; k++) {
+        const at = codeSourceOffset(token, 0, k)
+        if (k < c[1].length) {
+          assert.strictEqual(line[k], '\u200B', label)
+          stood += src[at]
+        } else if (line[k] !== ' ' || src[at] !== '\t') {
+          assert.strictEqual(src[at], line[k], label + ' col ' + k)
+        }
+      }
+      assert.strictEqual(stood, c[1], label)
+      assertRealLineStarts(src, token, label)
+      const cleanToken = findCode(clean.parse(src, {}))
+      assert.deepStrictEqual(cleanToken.meta.srcLineStarts, [c[3]], label)
+      assertCodeMapsToSource(src, cleanToken, label)
+    })
   })
 
   it('should map every character of generated code blocks to the source', function () {

@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [14.2.1] - Unreleased
+### Fixed
+- The `positionOffset` of the core `inline` rule (e.g.
+  `md.core.ruler.at('inline', state => inline(state, 18))` to account for a
+  stripped front matter) also shifts `meta.srcLineStarts` of `fence` and
+  `code_block` tokens, which are absolute offsets like `token.position`. It
+  shifted only `position` (`` > ```\n> code\n> ``` `` with an offset of 18 gave
+  `[8]` instead of `[26]`). Without an offset, nothing changes.
+
+### Documentation
+- A custom core `block` rule must store the return value of
+  `md.block.parse` as `state.blockState`, as the built-in rule does:
+  `utils.getLineOffset` and `utils.getLinePad` read the line offsets from
+  it. Without it (e.g. a rule written for upstream markdown-it) they return
+  0 without an error, and inline positions after the first line of a
+  container are off (`em_open` of `> a\n> b *c*` at 6 instead of 8).
+  Behavior is unchanged.
+- `zwspIndent`: the U+200B prepended to a code line stand for every source
+  character stripped before the line text within its container, not only
+  the indent. On the first line of a list item that starts with an indented
+  code block, they include the list marker and the spaces after it, for
+  each list item opened on that line: `-\t  s` and `-     s` give 4 and 6
+  U+200B, the first one standing for `-`. Blockquote markers (`>`) are
+  never included. The 14.1.3 and 14.2.0 notes said container markers were
+  not included. The number of U+200B, `meta.srcLineStarts` and the mapping
+  rule are unchanged.
+
+
 ## [14.2.0] - 2026-11-18
 ### Changed
 - `meta.srcLineStarts` of `fence` and `code_block` tokens is the source offset
